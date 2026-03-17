@@ -3,59 +3,27 @@ import Login from '../../Modules/Auth/Login';
 import LabManagerRoutes from '../LabManagerRoutes';
 import { fetchAllModules } from '../../Modules/LabManager/api';
 
-const APP_TIMEZONE = import.meta.env.VITE_APP_TIMEZONE || 'Asia/Kolkata';
+/**
+ * Client-side mirror of the server's isWithinAccessWindow utility.
+ * Returns true when the current moment is within [accessStart, accessEnd].
+ * Null values mean "no restriction" on that boundary.
+ */
+function isWithinAccessWindow(accessStart, accessEnd) {
+  if (accessStart == null && accessEnd == null) return true;
 
-function parseTimeToMinutes(value, fallback) {
-  if (!value || typeof value !== 'string') return fallback;
+  const now = Date.now();
 
-  const raw = value.trim().toUpperCase();
-  const m = raw.match(/^(\d{1,2}):(\d{2})(?:\s*([AP]M))?$/);
-  if (!m) return fallback;
-
-  let hour = Number(m[1]);
-  const minute = Number(m[2]);
-  const period = m[3];
-
-  if (!Number.isFinite(hour) || !Number.isFinite(minute) || minute < 0 || minute > 59) {
-    return fallback;
+  if (accessStart != null) {
+    const start = new Date(accessStart).getTime();
+    if (!isNaN(start) && now < start) return false;
   }
 
-  if (period) {
-    if (hour < 1 || hour > 12) return fallback;
-    if (period === 'AM') {
-      hour = hour % 12;
-    } else {
-      hour = (hour % 12) + 12;
-    }
+  if (accessEnd != null) {
+    const end = new Date(accessEnd).getTime();
+    if (!isNaN(end) && now > end) return false;
   }
 
-  if (hour < 0 || hour > 23) return fallback;
-  return hour * 60 + minute;
-}
-
-function getCurrentMinutesInTimezone(timeZone) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date());
-
-  const hour = Number(parts.find(p => p.type === 'hour')?.value ?? '0');
-  const minute = Number(parts.find(p => p.type === 'minute')?.value ?? '0');
-  return hour * 60 + minute;
-}
-
-function isWithinLoginWindow(loginStart, loginEnd) {
-  const startTotalMin = parseTimeToMinutes(loginStart, 0);
-  const endTotalMin = parseTimeToMinutes(loginEnd, 23 * 60 + 59);
-  const currentTotalMin = getCurrentMinutesInTimezone(APP_TIMEZONE);
-
-  if (endTotalMin < startTotalMin) {
-    return currentTotalMin >= startTotalMin || currentTotalMin <= endTotalMin;
-  }
-
-  return currentTotalMin >= startTotalMin && currentTotalMin <= endTotalMin;
+  return true;
 }
 
 export default function GlobalRoutes() {
@@ -92,7 +60,7 @@ export default function GlobalRoutes() {
     const assigned = Array.isArray(user.assignedModules) ? user.assignedModules : [];
     if (assigned.length === 0) return true;
 
-    return assigned.every(mod => !isWithinLoginWindow(mod.login_start || '00:00', mod.login_end || '23:59'));
+    return assigned.every(mod => !isWithinAccessWindow(mod.access_start ?? null, mod.access_end ?? null));
   }, [user]);
 
   useEffect(() => {
@@ -111,7 +79,7 @@ export default function GlobalRoutes() {
         const parsed = JSON.parse(storedUser);
         const assigned = Array.isArray(parsed?.assignedModules) ? parsed.assignedModules : [];
         const sessionExpired = assigned.length === 0
-          || assigned.every(mod => !isWithinLoginWindow(mod.login_start || '00:00', mod.login_end || '23:59'));
+          || assigned.every(mod => !isWithinAccessWindow(mod.access_start ?? null, mod.access_end ?? null));
 
         if (sessionExpired) {
           handleLogout();

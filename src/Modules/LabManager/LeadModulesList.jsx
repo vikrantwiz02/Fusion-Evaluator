@@ -19,18 +19,18 @@ export default function LeadModulesList({ modules, onSelectModule }) {
       });
   }, [modules]);
 
-  const checkTimeAccess = (start, end) => {
-    if (!start || !end) return true;
-    const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes();
-    
-    const [startH, startM] = start.split(':').map(Number);
-    const startTime = startH * 60 + startM;
-    
-    const [endH, endM] = end.split(':').map(Number);
-    const endTime = endH * 60 + endM;
-    
-    return currentTime >= startTime && currentTime <= endTime;
+  const checkTimeAccess = (accessStart, accessEnd) => {
+    if (accessStart == null && accessEnd == null) return true;
+    const now = Date.now();
+    if (accessStart != null && now < new Date(accessStart).getTime()) return false;
+    if (accessEnd != null && now > new Date(accessEnd).getTime()) return false;
+    return true;
+  };
+
+  const formatAccessWindow = (accessStart, accessEnd) => {
+    if (!accessStart && !accessEnd) return 'Unrestricted';
+    const fmt = iso => iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) : '∞';
+    return `${fmt(accessStart)} — ${fmt(accessEnd)}`;
   };
 
   return (
@@ -40,7 +40,7 @@ export default function LeadModulesList({ modules, onSelectModule }) {
       
       <div className="space-y-4">
         {liveModules.map(mod => {
-          const hasAccess = checkTimeAccess(mod.login_start, mod.login_end);
+          const hasAccess = checkTimeAccess(mod.access_start, mod.access_end);
           
           return (
             <div 
@@ -63,7 +63,7 @@ export default function LeadModulesList({ modules, onSelectModule }) {
 
                     <div className="flex items-center">
                       <Clock className="w-4 h-4 mr-1.5" />
-                      Access Window: {mod.login_start || '00:00'} - {mod.login_end || '23:59'}
+                      Access Window: {formatAccessWindow(mod.access_start, mod.access_end)}
                     </div>
                   </div>
                 </div>

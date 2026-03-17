@@ -7,34 +7,50 @@ datasource db {
 }
 
 model Module {
-  id              String   @id @default(uuid())
+  id              String          @id @default(uuid())
   name            String
-  assignment_name String   @default("")
+  assignment_name String          @default("")
   week_num        Int
-  date            String   @default("")
-  assigned_leads  String[] @default([])
-  login_start     String   @default("00:00")
-  login_end       String   @default("23:59")
-  has_backend     Boolean  @default(true)
-  has_frontend    Boolean  @default(true)
+  date            String          @default("")
+  assigned_leads  String[]        @default([])
+  access_start    DateTime?
+  access_end      DateTime?
+  has_backend     Boolean         @default(true)
+  has_frontend    Boolean         @default(true)
   groups          Group[]
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  divisions       GroupDivision[]
+  created_at      DateTime        @default(now())
+  updated_at      DateTime        @updatedAt
 
   @@map("modules")
 }
 
+model GroupDivision {
+  id         String   @id @default(uuid())
+  module_id  String
+  module     Module   @relation(fields: [module_id], references: [id], onDelete: Cascade)
+  name       String
+  pairs      Group[]
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([module_id, name])
+  @@map("group_divisions")
+}
+
 model Group {
-  id              String   @id @default(uuid())
+  id              String         @id @default(uuid())
   module_id       String
-  module          Module   @relation(fields: [module_id], references: [id], onDelete: Cascade)
+  module          Module         @relation(fields: [module_id], references: [id], onDelete: Cascade)
+  division_id     String?
+  division        GroupDivision? @relation(fields: [division_id], references: [id], onDelete: SetNull)
   pair_id         String
-  roll_numbers    String[] @default([])
-  category        String   @default("CONV")
-  is_merged       Boolean  @default(false)
+  roll_numbers    String[]       @default([])
+  category        String         @default("CONV")
+  is_merged       Boolean        @default(false)
   partner_pair_id String?
-  evaluation      Json     @default("{}")
-  created_at      DateTime @default(now())
+  evaluation      Json           @default("{}")
+  created_at      DateTime       @default(now())
 
   @@map("groups")
 }

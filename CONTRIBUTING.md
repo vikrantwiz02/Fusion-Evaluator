@@ -285,4 +285,4 @@ Contributors will be recognized in:
 - **Primary Maintainer**: Vikrant
 - **Reviewers**: [List of core contributors]
 
-Thank you for contributing to Fusion Evaluator! 🚀
+Thank you for contributing to Fusion Evaluator!

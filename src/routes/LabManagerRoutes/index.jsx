@@ -30,13 +30,13 @@ export default function LabManagerRoutes({ user, onLogout }) {
       <div className="flex-1 overflow-auto">
         {user.role === 'admin' ? (
           selectedModuleId ? (
-            <LeadDashboard moduleId={selectedModuleId} onBack={() => setSelectedModuleId(null)} />
+            <LeadDashboard moduleId={selectedModuleId} user={user} onBack={() => setSelectedModuleId(null)} />
           ) : (
             <AdminDashboard onSelectModule={setSelectedModuleId} />
           )
         ) : (
           selectedModuleId ? (
-            <LeadDashboard moduleId={selectedModuleId} onBack={() => setSelectedModuleId(null)} />
+            <LeadDashboard moduleId={selectedModuleId} user={user} onBack={() => setSelectedModuleId(null)} />
           ) : (
             <LeadModulesList modules={user.assignedModules} onSelectModule={setSelectedModuleId} />
           )

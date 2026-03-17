@@ -114,4 +114,38 @@ export const mergePairs = async (moduleId, poorPairId, highPairId) => {
   return data;
 };
 
+// ── Division CRUD ──────────────────────────────────────────────────────────────
+
+export const createDivision = async (moduleId, divisionData) => {
+  const { data } = await api.post(`/modules/${moduleId}/divisions`, divisionData);
+  return data;
+};
+
+export const updateDivision = async (moduleId, divisionId, divisionData) => {
+  const { data } = await api.put(`/modules/${moduleId}/divisions/${divisionId}`, divisionData);
+  return data;
+};
+
+export const deleteDivision = async (moduleId, divisionId) => {
+  const { data } = await api.delete(`/modules/${moduleId}/divisions/${divisionId}`);
+  return data;
+};
+
+// ── Bulk timer ─────────────────────────────────────────────────────────────────
+
+/**
+ * Set (or clear) the access timer for multiple modules at once.
+ * @param {string[]} moduleIds
+ * @param {string|null} accessStart  ISO 8601 datetime or null to remove restriction
+ * @param {string|null} accessEnd    ISO 8601 datetime or null to remove restriction
+ */
+export const bulkUpdateTimer = async (moduleIds, accessStart, accessEnd) => {
+  const { data } = await api.put('/modules/bulk-timer', {
+    moduleIds,
+    access_start: accessStart,
+    access_end: accessEnd,
+  });
+  return data;
+};
+
 export default api;
