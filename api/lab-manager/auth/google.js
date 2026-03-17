@@ -137,7 +137,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const assignedModules = await Module.find({ assigned_leads: { $in: [normalized] } }).sort({ week_num: 1 });
+    const assignedModules = await Module.find({ assigned_leads: { $in: [normalized] } }).sort({ createdAt: 1 });
 
     if (assignedModules.length > 0) {
       // Check if at least one assigned module is within login window

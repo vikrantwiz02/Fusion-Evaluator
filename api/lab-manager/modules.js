@@ -65,7 +65,7 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Lead email is required' });
       }
 
-      const modules = await Module.find(query).sort({ week_num: 1, createdAt: 1 }).lean();
+      const modules = await Module.find(query).sort({ createdAt: 1 }).lean();
       const serialized = modules.map(serializeModule).filter(m => m !== null);
       return res.status(200).json(serialized);
     }

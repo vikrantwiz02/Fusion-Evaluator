@@ -88,8 +88,6 @@ export default function AdminDashboard({ onSelectModule }) {
   const getTodayDate = () => new Date().toISOString().split('T')[0];
   const [formData, setFormData] = useState({
     name: '',
-    assignment_name: '',
-    week_num: '',
     assigned_leads: '',
     access_start: '',
     access_end: '',
@@ -143,8 +141,6 @@ export default function AdminDashboard({ onSelectModule }) {
       setEditingModule(mod.id);
       setFormData({
         name: mod.name,
-        assignment_name: mod.assignment_name || '',
-        week_num: String(mod.week_num ?? ''),
         assigned_leads: mod.assigned_leads.join(', '),
         access_start: toDatetimeLocal(mod.access_start),
         access_end: toDatetimeLocal(mod.access_end),
@@ -156,8 +152,6 @@ export default function AdminDashboard({ onSelectModule }) {
       setEditingModule(null);
       setFormData({
         name: '',
-        assignment_name: '',
-        week_num: String(modules.length + 1),
         assigned_leads: '',
         access_start: '',
         access_end: '',
@@ -171,11 +165,6 @@ export default function AdminDashboard({ onSelectModule }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    const weekNum = parseInt(formData.week_num, 10);
-    if (!Number.isFinite(weekNum)) {
-      alert('Week number must be a valid integer.');
-      return;
-    }
     const accessStart = fromDatetimeLocal(formData.access_start);
     const accessEnd = fromDatetimeLocal(formData.access_end);
     if (accessStart && accessEnd && new Date(accessStart) >= new Date(accessEnd)) {
@@ -185,8 +174,6 @@ export default function AdminDashboard({ onSelectModule }) {
 
     const payload = {
       name: formData.name,
-      assignment_name: formData.assignment_name,
-      week_num: weekNum,
       assigned_leads: formData.assigned_leads.split(',').map(s => s.trim()).filter(Boolean),
       access_start: accessStart,
       access_end: accessEnd,
@@ -316,7 +303,7 @@ export default function AdminDashboard({ onSelectModule }) {
 
   const buildCsvFromModules = (modulesList) => {
     const headers = [
-      'Module ID', 'Module Name', 'Assignment Name', 'Week Number', 'Date',
+      'Module ID', 'Module Name', 'Date',
       'Access Start', 'Access End', 'Has Backend', 'Has Frontend', 'Assigned Leads',
       'Group ID', 'Pair ID', 'Roll Numbers', 'Category', 'Is Merged', 'Partner Pair ID',
       'Overall Status', 'Backend Files', 'Backend API Endpoints', 'Backend Functions',
@@ -332,7 +319,7 @@ export default function AdminDashboard({ onSelectModule }) {
       if (!mod || !Array.isArray(mod.assigned_leads)) return;
       const groups = Array.isArray(mod.groups) ? mod.groups : [];
       const rowBase = [
-        mod.id || '', mod.name || '', mod.assignment_name || '', mod.week_num ?? '', mod.date || '',
+        mod.id || '', mod.name || '', mod.date || '',
         formatDateTime(mod.access_start) || '', formatDateTime(mod.access_end) || '',
         mod.has_backend !== false ? 'Yes' : 'No',
         mod.has_frontend !== false ? 'Yes' : 'No',
@@ -484,7 +471,6 @@ export default function AdminDashboard({ onSelectModule }) {
                       <td className="px-6 py-4">
                         <div className="font-medium text-gray-900">{mod.name}</div>
                         <div className="text-xs text-gray-500 mt-0.5">
-                          {mod.assignment_name || `Week ${mod.week_num}`}
                           {mod.divisions?.length > 0 && (
                             <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-700">
                               {mod.divisions.length} division{mod.divisions.length !== 1 ? 's' : ''}
@@ -553,16 +539,6 @@ export default function AdminDashboard({ onSelectModule }) {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Module Name</label>
                 <input required type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assignment Name</label>
-                  <input required type="text" value={formData.assignment_name} onChange={e => setFormData({ ...formData, assignment_name: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" placeholder="e.g. Assignment 1" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Week Number</label>
-                  <input required type="number" min="1" value={formData.week_num} onChange={e => setFormData({ ...formData, week_num: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" placeholder="e.g. 1" />
-                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

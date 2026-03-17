@@ -134,7 +134,6 @@ export default function MasterLeadsData({ onSelectModule }) {
                   <div className="flex items-center">
                     <BookOpen className="w-5 h-5 text-indigo-500 mr-3" />
                     <h3 className="font-semibold text-gray-900 text-lg">{mod.name}</h3>
-                    <span className="ml-3 text-sm text-gray-500">{mod.assignment_name || `Week ${mod.week_num}`}</span>
                   </div>
                   <div className="mt-2 flex items-center text-sm text-gray-600 space-x-4">
                     <div className="flex items-center">

@@ -9,8 +9,6 @@ datasource db {
 model Module {
   id              String          @id @default(uuid())
   name            String
-  assignment_name String          @default("")
-  week_num        Int
   date            String          @default("")
   assigned_leads  String[]        @default([])
   access_start    DateTime?

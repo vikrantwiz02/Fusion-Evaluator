@@ -52,7 +52,6 @@ export default function LeadModulesList({ modules, onSelectModule }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-3 mb-2">
                     <h2 className="text-xl font-semibold text-gray-900 truncate">{mod.name}</h2>
-                    <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap">{mod.assignment_name || `Week ${mod.week_num}`}</span>
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center sm:gap-6 text-sm text-gray-500">
