@@ -1,0 +1,5 @@
+{
+  "name": "Fusion Evaluator",
+  "description": "A system to manage course modules, evaluate student projects, and manage domain lead assignments.",
+  "requestFramePermissions": []
+}

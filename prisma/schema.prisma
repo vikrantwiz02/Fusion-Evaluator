@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Module {
+  id              String   @id @default(uuid())
+  name            String
+  assignment_name String   @default("")
+  week_num        Int
+  date            String   @default("")
+  assigned_leads  String[] @default([])
+  login_start     String   @default("00:00")
+  login_end       String   @default("23:59")
+  has_backend     Boolean  @default(true)
+  has_frontend    Boolean  @default(true)
+  groups          Group[]
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@map("modules")
+}
+
+model Group {
+  id              String   @id @default(uuid())
+  module_id       String
+  module          Module   @relation(fields: [module_id], references: [id], onDelete: Cascade)
+  pair_id         String
+  roll_numbers    String[] @default([])
+  category        String   @default("CONV")
+  is_merged       Boolean  @default(false)
+  partner_pair_id String?
+  evaluation      Json     @default("{}")
+  created_at      DateTime @default(now())
+
+  @@map("groups")
+}
+
+model User {
+  id             Int      @id @default(autoincrement())
+  email          String   @unique
+  role           String   @default("lead")
+  name           String   @default("")
+  picture        String   @default("")
+  google_subject String   @default("")
+  last_login_at  DateTime?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Admin {
+  id         Int      @id @default(autoincrement())
+  email      String   @unique
+  added_by   String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("admins")
+}
