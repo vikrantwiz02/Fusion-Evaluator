@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckSquare, Square, Plus, Trash2, ChevronRight, ChevronDown, Folder, FolderOpen, FilePlus } from 'lucide-react';
+import { CheckSquare, Square, Plus, Trash2, ChevronRight, ChevronDown, Folder, FolderOpen, FilePlus, Edit2, Check, X } from 'lucide-react';
 
 function setAtPath(obj, parts, value) {
   if (parts.length === 1) return { ...obj, [parts[0]]: value };
@@ -25,9 +25,30 @@ function toggleAtPath(obj, parts) {
   return { ...obj, [head]: toggleAtPath(obj[head], rest) };
 }
 
-function FileTree({ nodes, onToggle, onDelete, onAdd, collapsed, onCollapse, pathPrefix = [] }) {
+function renameAtPath(obj, parts, newName) {
+  if (!newName || !newName.trim()) return obj;
+  const cleanedName = newName.trim().replace(/\//g, '');
+  if (!cleanedName) return obj;
+
+  if (parts.length === 1) {
+    const oldName = parts[0];
+    if (oldName === cleanedName || Object.prototype.hasOwnProperty.call(obj, cleanedName)) return obj;
+    const next = { ...obj };
+    const value = next[oldName];
+    delete next[oldName];
+    next[cleanedName] = value;
+    return next;
+  }
+
+  const [head, ...rest] = parts;
+  if (!obj[head] || typeof obj[head] !== 'object') return obj;
+  return { ...obj, [head]: renameAtPath(obj[head], rest, cleanedName) };
+}
+
+function FileTree({ nodes, onToggle, onDelete, onRename, onAdd, collapsed, onCollapse, pathPrefix = [] }) {
   // inlineAdd: pathKey → input value (null = hidden)
   const [inlineAdd, setInlineAdd] = useState({});
+  const [inlineEdit, setInlineEdit] = useState({});
 
   const showInlineAdd = (pathKey) =>
     setInlineAdd((prev) => ({ ...prev, [pathKey]: prev[pathKey] == null ? '' : null }));
@@ -42,6 +63,16 @@ function FileTree({ nodes, onToggle, onDelete, onAdd, collapsed, onCollapse, pat
     setInlineAdd((prev) => ({ ...prev, [pathKey]: null }));
   };
 
+  const showInlineEdit = (pathKey, currentName) => {
+    setInlineEdit((prev) => ({ ...prev, [pathKey]: currentName }));
+  };
+
+  const commitInlineEdit = (pathKey, currentPath) => {
+    const val = (inlineEdit[pathKey] ?? '').trim();
+    if (val) onRename(currentPath, val);
+    setInlineEdit((prev) => ({ ...prev, [pathKey]: null }));
+  };
+
   return (
     <div>
       {Object.entries(nodes).map(([name, value]) => {
@@ -53,41 +84,82 @@ function FileTree({ nodes, onToggle, onDelete, onAdd, collapsed, onCollapse, pat
           const isCollapsed = collapsed[pathKey];
           const addInputValue = inlineAdd[pathKey];
           const addOpen = addInputValue != null;
+          const editInputValue = inlineEdit[pathKey];
+          const editOpen = editInputValue != null;
 
           return (
             <div key={name}>
               <div className="flex items-center justify-between text-sm hover:bg-slate-50 p-1.5 rounded transition-colors group border border-transparent hover:border-slate-200">
-                <div
-                  className="flex items-center space-x-1.5 cursor-pointer flex-1 min-w-0"
-                  onClick={() => onCollapse(pathKey)}
-                >
-                  {isCollapsed
-                    ? <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                    : <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  }
-                  {isCollapsed
-                    ? <Folder className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                    : <FolderOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                  }
-                  <span className="font-medium text-gray-600 truncate" title={name}>{name}</span>
-                </div>
+                {editOpen ? (
+                  <div className="flex items-center w-full space-x-1.5">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={editInputValue}
+                      onChange={(e) => setInlineEdit((prev) => ({ ...prev, [pathKey]: e.target.value }))}
+                      className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-indigo-400"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitInlineEdit(pathKey, currentPath);
+                        if (e.key === 'Escape') setInlineEdit((prev) => ({ ...prev, [pathKey]: null }));
+                      }}
+                    />
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); commitInlineEdit(pathKey, currentPath); }}
+                      className="p-1 text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                      title="Save"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); setInlineEdit((prev) => ({ ...prev, [pathKey]: null })); }}
+                      className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="flex items-center space-x-1.5 cursor-pointer flex-1 min-w-0"
+                      onClick={() => onCollapse(pathKey)}
+                    >
+                      {isCollapsed
+                        ? <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        : <ChevronDown className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      }
+                      {isCollapsed
+                        ? <Folder className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        : <FolderOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                      }
+                      <span className="font-medium text-gray-600 truncate" title={name}>{name}</span>
+                    </div>
 
-                <div className="flex items-center space-x-0.5 flex-shrink-0">
+                    <div className="flex items-center space-x-0.5 flex-shrink-0">
+                      <button
+                        title="Edit"
+                        onClick={(e) => { e.stopPropagation(); showInlineEdit(pathKey, name); }}
+                        className="p-1 text-gray-400 hover:text-indigo-500 cursor-pointer"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
                   {/* Add file inside folder */}
                   <button
                     title="Add file inside"
                     onClick={(e) => { e.stopPropagation(); onCollapse(pathKey, false); showInlineAdd(pathKey); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-indigo-500 transition-opacity cursor-pointer"
+                    className="p-1 text-gray-400 hover:text-indigo-500 cursor-pointer"
                   >
                     <FilePlus className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => onDelete(currentPath)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity cursor-pointer"
+                    className="p-1 text-gray-400 hover:text-red-500 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
+                  </>
+                )}
               </div>
 
               {!isCollapsed && (
@@ -96,6 +168,7 @@ function FileTree({ nodes, onToggle, onDelete, onAdd, collapsed, onCollapse, pat
                     nodes={value}
                     onToggle={onToggle}
                     onDelete={onDelete}
+                    onRename={onRename}
                     onAdd={onAdd}
                     collapsed={collapsed}
                     onCollapse={onCollapse}
@@ -132,29 +205,73 @@ function FileTree({ nodes, onToggle, onDelete, onAdd, collapsed, onCollapse, pat
           );
         }
 
+        const editInputValue = inlineEdit[pathKey];
+        const editOpen = editInputValue != null;
+
         return (
           <div
             key={name}
             className="flex items-center justify-between text-sm hover:bg-slate-50 p-1.5 rounded transition-colors group border border-transparent hover:border-slate-200"
           >
-            <div
-              className="flex items-center space-x-2 cursor-pointer flex-1 overflow-hidden"
-              onClick={() => onToggle(currentPath)}
-            >
-              {value
-                ? <CheckSquare className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                : <Square className="w-4 h-4 text-gray-300 flex-shrink-0" />
-              }
-              <span className={`truncate ${value ? 'text-gray-700' : 'text-gray-400'}`} title={name}>
-                {name}
-              </span>
-            </div>
-            <button
-              onClick={() => onDelete(currentPath)}
-              className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity cursor-pointer flex-shrink-0"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {editOpen ? (
+              <div className="flex items-center w-full space-x-1.5">
+                <input
+                  autoFocus
+                  type="text"
+                  value={editInputValue}
+                  onChange={(e) => setInlineEdit((prev) => ({ ...prev, [pathKey]: e.target.value }))}
+                  className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-indigo-400"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitInlineEdit(pathKey, currentPath);
+                    if (e.key === 'Escape') setInlineEdit((prev) => ({ ...prev, [pathKey]: null }));
+                  }}
+                />
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); commitInlineEdit(pathKey, currentPath); }}
+                  className="p-1 text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                  title="Save"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); setInlineEdit((prev) => ({ ...prev, [pathKey]: null })); }}
+                  className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer"
+                  title="Cancel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div
+                  className="flex items-center space-x-2 cursor-pointer flex-1 overflow-hidden"
+                  onClick={() => onToggle(currentPath)}
+                >
+                  {value
+                    ? <CheckSquare className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    : <Square className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                  }
+                  <span className={`truncate ${value ? 'text-gray-700' : 'text-gray-400'}`} title={name}>
+                    {name}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-0.5 flex-shrink-0">
+                  <button
+                    onClick={() => showInlineEdit(pathKey, name)}
+                    className="p-1 text-gray-400 hover:text-indigo-500 cursor-pointer"
+                    title="Edit"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDelete(currentPath)}
+                    className="p-1 text-gray-400 hover:text-red-500 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         );
       })}
@@ -170,6 +287,7 @@ export default function FileChecklist({ title, files, onUpdate }) {
 
   const handleToggle = (pathParts) => onUpdate(toggleAtPath(files, pathParts));
   const handleDelete = (pathParts) => onUpdate(deleteAtPath(files, pathParts));
+  const handleRename = (pathParts, newName) => onUpdate(renameAtPath(files, pathParts, newName));
   const handleAdd = (pathParts, value) => onUpdate(setAtPath(files, pathParts, value));
 
   // onCollapse: forceExpand=false means keep current, forceExpand=true means force open
@@ -200,6 +318,7 @@ export default function FileChecklist({ title, files, onUpdate }) {
           nodes={files}
           onToggle={handleToggle}
           onDelete={handleDelete}
+          onRename={handleRename}
           onAdd={handleAdd}
           collapsed={collapsed}
           onCollapse={handleCollapse}

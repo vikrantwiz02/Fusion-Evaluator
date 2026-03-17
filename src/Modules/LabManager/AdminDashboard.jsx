@@ -308,7 +308,7 @@ export default function AdminDashboard({ onSelectModule }) {
       'Group ID', 'Pair ID', 'Roll Numbers', 'Category', 'Is Merged', 'Partner Pair ID',
       'Overall Status', 'Backend Files', 'Backend API Endpoints', 'Backend Functions',
       'Backend Architecture Match', 'Backend Architecture Note',
-      'Frontend Files', 'Frontend Components', 'Frontend Endpoints Integrated',
+      'Frontend Files', 'Frontend Endpoints Integrated',
       'UI/UX Matches Fusion ERP', 'Frontend Architecture Match', 'Frontend Architecture Note',
       'Features Integration', 'Notes & Observations', 'Module Created At', 'Module Updated At',
     ];
@@ -344,7 +344,7 @@ export default function AdminDashboard({ onSelectModule }) {
           formatList(ev?.backend?.functions),
           ev?.backend?.architecture_matches_reference ? 'Yes' : 'No',
           ev?.backend?.architecture_note || '',
-          formatChecklist(ev?.frontend?.files), formatList(ev?.frontend?.components),
+          formatChecklist(ev?.frontend?.files),
           formatList(ev?.frontend?.endpoints_used),
           ev?.frontend?.ui_ux_matches_fusion_erp ? 'Yes' : 'No',
           ev?.frontend?.architecture_matches_reference ? 'Yes' : 'No',

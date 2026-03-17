@@ -24,7 +24,6 @@ function summarizeModule(mod) {
         acc.backendArchitectureMatches += 1;
       }
 
-      acc.frontendComponents += (evalData.frontend?.components || []).length;
       acc.frontendEndpoints += (evalData.frontend?.endpoints_used || []).length;
       if (evalData.frontend?.architecture_matches_reference) {
         acc.frontendArchitectureMatches += 1;
@@ -51,7 +50,6 @@ function summarizeModule(mod) {
       backendArchitectureMatches: 0,
       frontendFilesDone: 0,
       frontendFilesTotal: 0,
-      frontendComponents: 0,
       frontendEndpoints: 0,
       frontendArchitectureMatches: 0,
       featuresFunctional: 0,
@@ -176,7 +174,6 @@ export default function MasterLeadsData({ onSelectModule }) {
                       <div className="bg-white border border-gray-200 rounded-xl p-3">
                         <div className="flex items-center text-xs text-gray-500 mb-1"><Layout className="w-3.5 h-3.5 mr-1.5" />Frontend Summary</div>
                         <div className="text-sm text-gray-700">Files: <span className="font-semibold">{moduleSummary.frontendFilesDone}/{moduleSummary.frontendFilesTotal}</span></div>
-                        <div className="text-sm text-gray-700">Components: <span className="font-semibold">{moduleSummary.frontendComponents}</span></div>
                         <div className="text-sm text-gray-700">Integrated Endpoints: <span className="font-semibold">{moduleSummary.frontendEndpoints}</span></div>
                         <div className="text-sm text-gray-700">Architecture Match: <span className="font-semibold">{moduleSummary.frontendArchitectureMatches}/{totalPairs}</span></div>
                       </div>
