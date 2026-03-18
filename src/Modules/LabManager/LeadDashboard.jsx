@@ -22,11 +22,31 @@ import {
 
 // ── Sidebar helpers ────────────────────────────────────────────────────────────
 
-function DivisionSection({ division, pairs, isAdmin, selectedGroupId, onSelectGroup, onAddPair, onRename, onDelete }) {
+function DivisionSection({
+  division,
+  pairs,
+  isAdmin,
+  selectedGroupId,
+  onSelectGroup,
+  onAddPair,
+  onRename,
+  onDelete,
+  canMovePairs,
+  isDropActive,
+  onDragEnterZone,
+  onDropGroup,
+  onPairDragStart,
+  onPairDragEnd,
+}) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div>
+    <div
+      className={`rounded-lg ${isDropActive ? 'ring-2 ring-indigo-200 bg-indigo-50/30' : ''}`}
+      onDragEnter={canMovePairs ? () => onDragEnterZone(division.id) : undefined}
+      onDragOver={canMovePairs ? (e) => { e.preventDefault(); } : undefined}
+      onDrop={canMovePairs ? (e) => { e.preventDefault(); onDropGroup(division.id); } : undefined}
+    >
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100 rounded-lg mb-1">
         <button
           onClick={() => setCollapsed(v => !v)}
@@ -73,6 +93,9 @@ function DivisionSection({ division, pairs, isAdmin, selectedGroupId, onSelectGr
               group={group}
               selected={selectedGroupId === group.id}
               onClick={() => onSelectGroup(group.id)}
+              draggable={canMovePairs}
+              onDragStart={() => onPairDragStart(group.id)}
+              onDragEnd={onPairDragEnd}
             />
           ))}
           {pairs.length === 0 && (
@@ -84,10 +107,17 @@ function DivisionSection({ division, pairs, isAdmin, selectedGroupId, onSelectGr
   );
 }
 
-function PairCard({ group, selected, onClick }) {
+function PairCard({ group, selected, onClick, draggable = false, onDragStart, onDragEnd }) {
   return (
     <div
       onClick={onClick}
+      draggable={draggable}
+      onDragStart={(e) => {
+        if (!draggable) return;
+        e.dataTransfer.effectAllowed = 'move';
+        onDragStart?.();
+      }}
+      onDragEnd={() => onDragEnd?.()}
       className={`p-3 rounded-xl cursor-pointer transition-all border ${selected ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-200'}`}
     >
       <div className="flex justify-between items-start mb-2">
@@ -113,6 +143,12 @@ function PairCard({ group, selected, onClick }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function LeadDashboard({ moduleId, user, onBack }) {
+    const byNaturalLabel = (a, b) =>
+      String(a || '').localeCompare(String(b || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+
   const isAdmin = user?.role === 'admin';
 
   const [moduleData, setModuleData] = useState(null);
@@ -134,6 +170,8 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const [divisionToEdit, setDivisionToEdit] = useState(null);
   const [deleteDivisionConfirmOpen, setDeleteDivisionConfirmOpen] = useState(false);
   const [divisionToDelete, setDivisionToDelete] = useState(null);
+  const [draggedGroupId, setDraggedGroupId] = useState(null);
+  const [dragOverZone, setDragOverZone] = useState(null);
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
@@ -317,9 +355,52 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     }
   };
 
+  const handlePairDragStart = (groupId) => {
+    setDraggedGroupId(groupId);
+  };
+
+  const handlePairDragEnd = () => {
+    setDraggedGroupId(null);
+    setDragOverZone(null);
+  };
+
+  const handleDropGroupToDivision = async (targetDivisionId) => {
+    if (!draggedGroupId) return;
+
+    const nextDivisionId = targetDivisionId || null;
+    const movingGroup = (moduleData?.groups || []).find(g => g.id === draggedGroupId);
+
+    if (!movingGroup || (movingGroup.division_id || null) === nextDivisionId) {
+      handlePairDragEnd();
+      return;
+    }
+
+    setModuleData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        groups: (prev.groups || []).map(g =>
+          g.id === draggedGroupId ? { ...g, division_id: nextDivisionId } : g
+        ),
+      };
+    });
+
+    try {
+      await updateGroup(moduleId, draggedGroupId, { division_id: nextDivisionId });
+    } catch (err) {
+      await loadData({ silent: true });
+      alert(err.message || 'Failed to move pair to selected division.');
+    } finally {
+      handlePairDragEnd();
+    }
+  };
+
   // ── Derived data ─────────────────────────────────────────────────────────────
 
-  const divisions = useMemo(() => Array.isArray(moduleData?.divisions) ? moduleData.divisions : [], [moduleData]);
+  const divisions = useMemo(() => {
+    const rawDivisions = Array.isArray(moduleData?.divisions) ? [...moduleData.divisions] : [];
+    return rawDivisions.sort((a, b) => byNaturalLabel(a?.name, b?.name));
+  }, [moduleData]);
 
   const divisionOptions = useMemo(() =>
     [{ label: 'No Division (ungrouped)', value: '' },
@@ -327,13 +408,17 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   [divisions]);
 
   const ungroupedPairs = useMemo(() =>
-    (moduleData?.groups || []).filter(g => !g.division_id),
+    (moduleData?.groups || [])
+      .filter(g => !g.division_id)
+      .sort((a, b) => byNaturalLabel(a?.pair_id, b?.pair_id)),
   [moduleData]);
 
   const pairsByDivision = useMemo(() => {
     const map = {};
     for (const d of divisions) {
-      map[d.id] = (moduleData?.groups || []).filter(g => g.division_id === d.id);
+      map[d.id] = (moduleData?.groups || [])
+        .filter(g => g.division_id === d.id)
+        .sort((a, b) => byNaturalLabel(a?.pair_id, b?.pair_id));
     }
     return map;
   }, [divisions, moduleData]);
@@ -364,6 +449,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   }, [ungroupedPairs, filteredGroups]);
 
   const selectedGroup = allGroups.find(g => g.id === selectedGroupId);
+  const canMovePairs = isAdmin;
 
   // ── Render guards ─────────────────────────────────────────────────────────────
 
@@ -440,13 +526,24 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                   onAddPair={openAddPairModal}
                   onRename={openRenameDivision}
                   onDelete={confirmDeleteDivision}
+                  canMovePairs={canMovePairs}
+                  isDropActive={dragOverZone === `division:${div.id}`}
+                  onDragEnterZone={(divisionId) => setDragOverZone(`division:${divisionId}`)}
+                  onDropGroup={handleDropGroupToDivision}
+                  onPairDragStart={handlePairDragStart}
+                  onPairDragEnd={handlePairDragEnd}
                 />
               );
             })}
 
             {/* Ungrouped pairs */}
-            {visibleUngrouped.length > 0 && (
-              <div>
+            {(hasDivisions || visibleUngrouped.length > 0) && (
+              <div
+                className={`rounded-lg ${dragOverZone === 'ungrouped' ? 'ring-2 ring-indigo-200 bg-indigo-50/30' : ''}`}
+                onDragEnter={canMovePairs ? () => setDragOverZone('ungrouped') : undefined}
+                onDragOver={canMovePairs ? (e) => { e.preventDefault(); } : undefined}
+                onDrop={canMovePairs ? (e) => { e.preventDefault(); handleDropGroupToDivision(null); } : undefined}
+              >
                 {hasDivisions && (
                   <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100 rounded-lg mb-1">
                     <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -471,8 +568,14 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                       group={group}
                       selected={selectedGroupId === group.id}
                       onClick={() => setSelectedGroupId(group.id)}
+                      draggable={canMovePairs}
+                      onDragStart={() => handlePairDragStart(group.id)}
+                      onDragEnd={handlePairDragEnd}
                     />
                   ))}
+                  {visibleUngrouped.length === 0 && (
+                    <p className="text-xs text-gray-400 italic pl-3 py-2">Drop pairs here to ungroup them.</p>
+                  )}
                 </div>
               </div>
             )}

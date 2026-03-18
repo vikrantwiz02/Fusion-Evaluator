@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Login from '../../Modules/Auth/Login';
 import LabManagerRoutes from '../LabManagerRoutes';
 import { fetchAllModules } from '../../Modules/LabManager/api';
+import { Navigate, Route, Routes } from 'react-router-dom';
 
 /**
  * Client-side mirror of the server's isWithinAccessWindow utility.
@@ -117,9 +118,27 @@ export default function GlobalRoutes() {
     };
   }, [shouldAutoLogout, user]);
 
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
-  }
+  const homePath = user?.role === 'admin' ? '/admin/modules' : '/lead/modules';
 
-  return <LabManagerRoutes user={user} onLogout={handleLogout} />;
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          user
+            ? <Navigate to={homePath} replace />
+            : <Login onLogin={handleLogin} />
+        }
+      />
+
+      <Route
+        path="/*"
+        element={
+          user
+            ? <LabManagerRoutes user={user} onLogout={handleLogout} />
+            : <Navigate to="/login" replace />
+        }
+      />
+    </Routes>
+  );
 }

@@ -1,11 +1,28 @@
-import React, { useState } from 'react';
+import React from 'react';
 import AdminDashboard from '../../Modules/LabManager/AdminDashboard';
 import LeadDashboard from '../../Modules/LabManager/LeadDashboard';
 import LeadModulesList from '../../Modules/LabManager/LeadModulesList';
 import { LogOut, User } from 'lucide-react';
+import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+
+function ModuleDashboardRoute({ user, onBack }) {
+  const { moduleId } = useParams();
+  return <LeadDashboard moduleId={moduleId} user={user} onBack={onBack} />;
+}
 
 export default function LabManagerRoutes({ user, onLogout }) {
-  const [selectedModuleId, setSelectedModuleId] = useState(null);
+  const navigate = useNavigate();
+
+  const isAdmin = user?.role === 'admin';
+  const modulesRoot = isAdmin ? '/admin/modules' : '/lead/modules';
+
+  const handleSelectModule = (moduleId) => {
+    navigate(`${modulesRoot}/${moduleId}`);
+  };
+
+  const handleBackToModules = () => {
+    navigate(modulesRoot);
+  };
 
   return (
     <div className="flex flex-col h-screen bg-slate-50">
@@ -28,19 +45,53 @@ export default function LabManagerRoutes({ user, onLogout }) {
       </nav>
 
       <div className="flex-1 overflow-auto">
-        {user.role === 'admin' ? (
-          selectedModuleId ? (
-            <LeadDashboard moduleId={selectedModuleId} user={user} onBack={() => setSelectedModuleId(null)} />
-          ) : (
-            <AdminDashboard onSelectModule={setSelectedModuleId} />
-          )
-        ) : (
-          selectedModuleId ? (
-            <LeadDashboard moduleId={selectedModuleId} user={user} onBack={() => setSelectedModuleId(null)} />
-          ) : (
-            <LeadModulesList modules={user.assignedModules} onSelectModule={setSelectedModuleId} />
-          )
-        )}
+        <Routes>
+          <Route path="/" element={<Navigate to={modulesRoot} replace />} />
+
+          <Route
+            path="/admin/modules"
+            element={
+              isAdmin
+                ? <AdminDashboard onSelectModule={handleSelectModule} currentView="modules" />
+                : <Navigate to={modulesRoot} replace />
+            }
+          />
+          <Route
+            path="/admin/master-data"
+            element={
+              isAdmin
+                ? <AdminDashboard onSelectModule={handleSelectModule} currentView="leads" />
+                : <Navigate to={modulesRoot} replace />
+            }
+          />
+          <Route
+            path="/admin/modules/:moduleId"
+            element={
+              isAdmin
+                ? <ModuleDashboardRoute user={user} onBack={handleBackToModules} />
+                : <Navigate to={modulesRoot} replace />
+            }
+          />
+
+          <Route
+            path="/lead/modules"
+            element={
+              isAdmin
+                ? <Navigate to={modulesRoot} replace />
+                : <LeadModulesList modules={user.assignedModules} onSelectModule={handleSelectModule} />
+            }
+          />
+          <Route
+            path="/lead/modules/:moduleId"
+            element={
+              isAdmin
+                ? <Navigate to={modulesRoot} replace />
+                : <ModuleDashboardRoute user={user} onBack={handleBackToModules} />
+            }
+          />
+
+          <Route path="*" element={<Navigate to={modulesRoot} replace />} />
+        </Routes>
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import ConfirmModal from './components/ConfirmModal';
 import MasterLeadsData from './MasterLeadsData';
+import { NavLink } from 'react-router-dom';
 
 // ── Timer helpers ──────────────────────────────────────────────────────────────
 
@@ -76,11 +77,10 @@ const STATUS_CLASSES = {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export default function AdminDashboard({ onSelectModule }) {
+export default function AdminDashboard({ onSelectModule, currentView = 'modules' }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('modules');
 
   // Create / edit modal
   const [modalOpen, setModalOpen] = useState(false);
@@ -407,7 +407,7 @@ export default function AdminDashboard({ onSelectModule }) {
           <button onClick={exportAllToCSV} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm">
             <Download className="w-4 h-4 mr-2" /> Export All
           </button>
-          {activeTab === 'modules' && (
+          {currentView === 'modules' && (
             <button onClick={() => handleOpenModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm">
               <Plus className="w-4 h-4 mr-2" /> Create Module
             </button>
@@ -419,21 +419,21 @@ export default function AdminDashboard({ onSelectModule }) {
       <div className="mb-6 border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
           {[
-            { key: 'modules', label: 'Modules Overview', Icon: LayoutDashboard },
-            { key: 'leads', label: 'Master Evaluation Data', Icon: Users },
-          ].map(({ key, label, Icon }) => (
-            <button
+            { key: 'modules', label: 'Modules Overview', Icon: LayoutDashboard, to: '/admin/modules' },
+            { key: 'leads', label: 'Master Evaluation Data', Icon: Users, to: '/admin/master-data' },
+          ].map(({ key, label, Icon, to }) => (
+            <NavLink
               key={key}
-              onClick={() => setActiveTab(key)}
-              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center cursor-pointer ${activeTab === key ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+              to={to}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center cursor-pointer ${currentView === key ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
             >
               <Icon className="w-4 h-4 mr-2" />{label}
-            </button>
+            </NavLink>
           ))}
         </nav>
       </div>
 
-      {activeTab === 'modules' ? (
+      {currentView === 'modules' ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">

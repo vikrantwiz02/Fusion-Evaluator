@@ -4,7 +4,12 @@
  */
 
 import GlobalRoutes from './routes/globalRoutes';
+import { BrowserRouter } from 'react-router-dom';
 
 export default function App() {
-  return <GlobalRoutes />;
+  return (
+    <BrowserRouter>
+      <GlobalRoutes />
+    </BrowserRouter>
+  );
 }

@@ -194,76 +194,127 @@ export default function MasterLeadsData({ onSelectModule }) {
                     </div>
                   </div>
 
-                  {mod.groups.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {mod.groups.map(group => {
-                        const backendFiles = Object.values(group.evaluation?.backend?.files || {}).filter(Boolean).length;
-                        const totalBackendFiles = Object.keys(group.evaluation?.backend?.files || {}).length;
-                        const frontendFiles = Object.values(group.evaluation?.frontend?.files || {}).filter(Boolean).length;
-                        const totalFrontendFiles = Object.keys(group.evaluation?.frontend?.files || {}).length;
-                        const features = group.evaluation?.features || [];
-                        const functionalFeatures = features.filter(f => f.is_functional).length;
+                  {mod.groups.length > 0 ? (() => {
+                    const sortedGroups = [...mod.groups].sort((a, b) =>
+                      String(a?.pair_id || '').localeCompare(String(b?.pair_id || ''), undefined, {
+                        numeric: true,
+                        sensitivity: 'base',
+                      })
+                    );
 
-                        return (
-                          <div 
-                            key={group.id} 
-                            className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer"
-                            onClick={() => onSelectModule && onSelectModule(mod.id)}
-                            title="Click to view full pair details"
-                          >
-                            <div className="flex justify-between items-start mb-3">
-                              <div>
-                                <h4 className="font-bold text-gray-900">{group.pair_id}</h4>
-                                <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${group.category === 'AI' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                  {group.category}
+                    const sortedDivisions = [...(Array.isArray(mod.divisions) ? mod.divisions : [])].sort((a, b) =>
+                      String(a?.name || '').localeCompare(String(b?.name || ''), undefined, {
+                        numeric: true,
+                        sensitivity: 'base',
+                      })
+                    );
+
+                    const groupedByDivision = sortedDivisions.map(division => ({
+                      division,
+                      pairs: sortedGroups.filter(g => g.division_id === division.id),
+                    }));
+
+                    const ungroupedPairs = sortedGroups.filter(g => !g.division_id);
+
+                    const renderPairCard = (group) => {
+                      const backendFiles = Object.values(group.evaluation?.backend?.files || {}).filter(Boolean).length;
+                      const totalBackendFiles = Object.keys(group.evaluation?.backend?.files || {}).length;
+                      const frontendFiles = Object.values(group.evaluation?.frontend?.files || {}).filter(Boolean).length;
+                      const totalFrontendFiles = Object.keys(group.evaluation?.frontend?.files || {}).length;
+                      const features = group.evaluation?.features || [];
+                      const functionalFeatures = features.filter(f => f.is_functional).length;
+
+                      return (
+                        <div
+                          key={group.id}
+                          className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer"
+                          onClick={() => onSelectModule && onSelectModule(mod.id)}
+                          title="Click to view full pair details"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h4 className="font-bold text-gray-900">{group.pair_id}</h4>
+                              <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${group.category === 'AI' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {group.category}
+                              </span>
+                            </div>
+                            {group.evaluation?.is_functional ? (
+                              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                            ) : (
+                              <XCircle className="w-5 h-5 text-red-400" />
+                            )}
+                          </div>
+
+                          <div className="space-y-2 text-sm">
+                            {mod.has_backend !== false && (
+                              <div className="flex justify-between items-center text-gray-600">
+                                <span className="flex items-center"><Server className="w-3.5 h-3.5 mr-1.5"/> Backend Files</span>
+                                <span className="font-medium">{backendFiles}/{totalBackendFiles}</span>
+                              </div>
+                            )}
+                            {mod.has_backend !== false && (
+                              <div className="flex justify-between items-center text-gray-600">
+                                <span>Backend Architecture</span>
+                                <span className={`font-medium ${group.evaluation?.backend?.architecture_matches_reference ? 'text-emerald-600' : 'text-red-500'}`}>
+                                  {group.evaluation?.backend?.architecture_matches_reference ? 'Matching' : 'Not Matching'}
                                 </span>
                               </div>
-                              {group.evaluation?.is_functional ? (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                              ) : (
-                                <XCircle className="w-5 h-5 text-red-400" />
-                              )}
-                            </div>
-                            
-                            <div className="space-y-2 text-sm">
-                              {mod.has_backend !== false && (
-                                <div className="flex justify-between items-center text-gray-600">
-                                  <span className="flex items-center"><Server className="w-3.5 h-3.5 mr-1.5"/> Backend Files</span>
-                                  <span className="font-medium">{backendFiles}/{totalBackendFiles}</span>
-                                </div>
-                              )}
-                              {mod.has_backend !== false && (
-                                <div className="flex justify-between items-center text-gray-600">
-                                  <span>Backend Architecture</span>
-                                  <span className={`font-medium ${group.evaluation?.backend?.architecture_matches_reference ? 'text-emerald-600' : 'text-red-500'}`}>
-                                    {group.evaluation?.backend?.architecture_matches_reference ? 'Matching' : 'Not Matching'}
-                                  </span>
-                                </div>
-                              )}
-                              {mod.has_frontend !== false && (
-                                <div className="flex justify-between items-center text-gray-600">
-                                  <span className="flex items-center"><Layout className="w-3.5 h-3.5 mr-1.5"/> Frontend Files</span>
-                                  <span className="font-medium">{frontendFiles}/{totalFrontendFiles}</span>
-                                </div>
-                              )}
-                              {mod.has_frontend !== false && (
-                                <div className="flex justify-between items-center text-gray-600">
-                                  <span>Frontend Architecture</span>
-                                  <span className={`font-medium ${group.evaluation?.frontend?.architecture_matches_reference ? 'text-emerald-600' : 'text-red-500'}`}>
-                                    {group.evaluation?.frontend?.architecture_matches_reference ? 'Matching' : 'Not Matching'}
-                                  </span>
-                                </div>
-                              )}
+                            )}
+                            {mod.has_frontend !== false && (
                               <div className="flex justify-between items-center text-gray-600">
-                                <span className="flex items-center"><CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Features</span>
-                                <span className="font-medium">{functionalFeatures}/{features.length}</span>
+                                <span className="flex items-center"><Layout className="w-3.5 h-3.5 mr-1.5"/> Frontend Files</span>
+                                <span className="font-medium">{frontendFiles}/{totalFrontendFiles}</span>
                               </div>
+                            )}
+                            {mod.has_frontend !== false && (
+                              <div className="flex justify-between items-center text-gray-600">
+                                <span>Frontend Architecture</span>
+                                <span className={`font-medium ${group.evaluation?.frontend?.architecture_matches_reference ? 'text-emerald-600' : 'text-red-500'}`}>
+                                  {group.evaluation?.frontend?.architecture_matches_reference ? 'Matching' : 'Not Matching'}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center text-gray-600">
+                              <span className="flex items-center"><CheckCircle2 className="w-3.5 h-3.5 mr-1.5"/> Features</span>
+                              <span className="font-medium">{functionalFeatures}/{features.length}</span>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
+                        </div>
+                      );
+                    };
+
+                    return (
+                      <div className="space-y-4">
+                        {groupedByDivision.map(({ division, pairs }) => (
+                          <div key={division.id} className="space-y-3">
+                            <div className="flex items-center justify-between px-1">
+                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{division.name}</h4>
+                              <span className="text-xs text-gray-400">{pairs.length} pairs</span>
+                            </div>
+                            {pairs.length > 0 ? (
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                {pairs.map(renderPairCard)}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-400 italic px-1">No pairs in this division.</p>
+                            )}
+                          </div>
+                        ))}
+
+                        {ungroupedPairs.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between px-1">
+                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Ungrouped</h4>
+                              <span className="text-xs text-gray-400">{ungroupedPairs.length} pairs</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                              {ungroupedPairs.map(renderPairCard)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })() : (
                     <p className="text-sm text-gray-500 italic py-2">No pairs have been added to this module yet.</p>
                   )}
                 </div>
