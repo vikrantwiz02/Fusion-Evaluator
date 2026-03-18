@@ -114,6 +114,43 @@ export const mergePairs = async (moduleId, poorPairId, highPairId) => {
   return data;
 };
 
+export const fetchModuleSpecifications = async (moduleId) => {
+  const { data } = await api.get(`/modules/${moduleId}/specifications`);
+  return {
+    useCases: Array.isArray(data?.useCases) ? data.useCases : [],
+    workflows: Array.isArray(data?.workflows) ? data.workflows : [],
+    businessRules: Array.isArray(data?.businessRules) ? data.businessRules : [],
+  };
+};
+
+export const saveModuleSpecifications = async (moduleId, payload) => {
+  try {
+    const { data } = await api.put(`/modules/${moduleId}/specifications`, payload);
+    return {
+      useCases: Array.isArray(data?.useCases) ? data.useCases : [],
+      workflows: Array.isArray(data?.workflows) ? data.workflows : [],
+      businessRules: Array.isArray(data?.businessRules) ? data.businessRules : [],
+    };
+  } catch (error) {
+    if (error?.response?.status !== 404) {
+      throw error;
+    }
+
+    // Backward-compatible fallback for older backend instances missing the new endpoint.
+    const { data } = await api.put(`/modules/${moduleId}`, {
+      spec_use_cases: payload.useCases,
+      spec_workflows: payload.workflows,
+      spec_rules: payload.businessRules,
+    });
+
+    return {
+      useCases: Array.isArray(data?.spec_use_cases) ? data.spec_use_cases : [],
+      workflows: Array.isArray(data?.spec_workflows) ? data.spec_workflows : [],
+      businessRules: Array.isArray(data?.spec_rules) ? data.spec_rules : [],
+    };
+  }
+};
+
 // ── Division CRUD ──────────────────────────────────────────────────────────────
 
 export const createDivision = async (moduleId, divisionData) => {

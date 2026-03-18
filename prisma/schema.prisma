@@ -15,6 +15,9 @@ model Module {
   access_end      DateTime?
   has_backend     Boolean         @default(true)
   has_frontend    Boolean         @default(true)
+  spec_use_cases  Json            @default("[]")
+  spec_workflows  Json            @default("[]")
+  spec_rules      Json            @default("[]")
   groups          Group[]
   divisions       GroupDivision[]
   created_at      DateTime        @default(now())

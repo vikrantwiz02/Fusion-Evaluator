@@ -26,7 +26,7 @@ export default function LabManagerRoutes({ user, onLogout }) {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50">
-      <nav className="bg-gray-900 text-white px-6 py-3 flex justify-between items-center shadow-md z-10">
+      <nav className="sticky top-0 bg-gray-900 text-white px-6 py-3 flex justify-between items-center shadow-md z-[100]">
         <div className="flex items-center space-x-2">
           <span className="font-semibold tracking-wide">Fusion Evaluator</span>
           <span className="bg-gray-800 text-xs px-2 py-1 rounded text-gray-300 uppercase tracking-wider ml-4">
