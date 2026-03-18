@@ -1,16 +1,174 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import { Bold, Italic, Underline as UnderlineIcon, Upload, Save, Plus, FileSpreadsheet, Columns3 } from 'lucide-react';
+import { Bold, Italic, Underline as UnderlineIcon, Upload, Save, Plus, FileSpreadsheet, Columns3, Trash2 } from 'lucide-react';
 import { saveModuleSpecifications } from '../api';
 
-const SECTION_META = {
-  useCases: { label: 'Use Cases' },
-  workflows: { label: 'Workflows' },
-  businessRules: { label: 'Business Rules' },
-};
+const BASE_SECTIONS = [
+  { key: 'useCases', label: 'Use Cases' },
+  { key: 'workflows', label: 'Workflows' },
+  { key: 'businessRules', label: 'Business Rules' },
+];
+
+const DEFAULT_SERIAL_COLUMN = 'S.No.';
+const SERIAL_ALIASES = ['s.no.', 's.no', 'sno', 'sr.no', 'sr no', 'serial no', 'serial_no', 's_no'];
+
+function normalizeColumnName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function isSerialColumnName(value) {
+  return SERIAL_ALIASES.includes(normalizeColumnName(value));
+}
+
+function findSerialColumn(columns = []) {
+  return columns.find(col => isSerialColumnName(col)) || null;
+}
+
+function stripHtml(value) {
+  return String(value ?? '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isLegacyPlaceholderRow(row) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  const entries = Object.entries(row)
+    .map(([k, v]) => [String(k || '').trim(), stripHtml(v).toLowerCase()])
+    .filter(([k]) => k.length > 0);
+
+  if (entries.length !== 1) return false;
+  const [key, value] = entries[0];
+  const normalizedKey = key.toLowerCase();
+
+  return (normalizedKey === 'header' || normalizedKey === 'column 1') && value === 'ok';
+}
+
+function sanitizeIncomingRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter(row => row && typeof row === 'object' && !Array.isArray(row))
+    .filter(row => !isLegacyPlaceholderRow(row));
+}
+
+function withAutoSerial(rows) {
+  const cleanRows = sanitizeIncomingRows(rows).map(row => ({ ...row }));
+  const allColumns = Array.from(
+    new Set(cleanRows.flatMap(row => Object.keys(row || {}).map(key => String(key || '').trim()).filter(Boolean)))
+  );
+
+  const serialColumn = findSerialColumn(allColumns) || DEFAULT_SERIAL_COLUMN;
+
+  return cleanRows.map((row, index) => {
+    const next = { ...row };
+    if (next[serialColumn] === undefined || String(next[serialColumn]).trim() === '') {
+      next[serialColumn] = String(index + 1);
+    }
+    return next;
+  });
+}
+
+function collectColumns(rows) {
+  const cols = [];
+  (rows || []).forEach(row => {
+    Object.keys(row || {}).forEach(key => {
+      const k = String(key || '').trim();
+      if (k && !cols.includes(k)) cols.push(k);
+    });
+  });
+  return cols;
+}
+
+function orderColumns(discovered = [], preferred = []) {
+  const ordered = [];
+
+  preferred.forEach(col => {
+    const c = String(col || '').trim();
+    if (c && discovered.includes(c) && !ordered.includes(c)) ordered.push(c);
+  });
+
+  discovered.forEach(col => {
+    const c = String(col || '').trim();
+    if (c && !ordered.includes(c)) ordered.push(c);
+  });
+
+  const serialColumn = findSerialColumn(ordered);
+  if (serialColumn) {
+    return [serialColumn, ...ordered.filter(col => col !== serialColumn)];
+  }
+
+  return ordered;
+}
+
+function reorderRowByColumns(row, columns) {
+  const ordered = {};
+  columns.forEach(col => {
+    ordered[col] = row?.[col] ?? '';
+  });
+  return ordered;
+}
+
+function normalizeSectionKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function sanitizeSizeMap(value, { min, max }) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out = {};
+  Object.entries(value).forEach(([key, raw]) => {
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return;
+    out[String(key)] = Math.max(min, Math.min(max, num));
+  });
+  return out;
+}
+
+function normalizeLayout(layout) {
+  if (!layout || typeof layout !== 'object' || Array.isArray(layout)) {
+    return { columnWidths: {}, rowHeights: {}, extraSections: [] };
+  }
+
+  const rawExtra = Array.isArray(layout.extraSections) ? layout.extraSections : [];
+  const seen = new Set();
+  const extraSections = rawExtra
+    .filter(item => item && typeof item === 'object' && !Array.isArray(item))
+    .map(item => {
+      const key = normalizeSectionKey(item.key);
+      const label = String(item.label || '').trim();
+      if (!key || !label || seen.has(key)) return null;
+      seen.add(key);
+      return {
+        key,
+        label,
+        rows: withAutoSerial(item.rows),
+        columns: Array.isArray(item.columns) ? item.columns.map(col => String(col || '').trim()).filter(Boolean) : [],
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    columnWidths: sanitizeSizeMap(layout.columnWidths, { min: 120, max: 520 }),
+    rowHeights: sanitizeSizeMap(layout.rowHeights, { min: 48, max: 260 }),
+    extraSections,
+  };
+}
+
+function normalizeInitialSections(initialData) {
+  return {
+    useCases: withAutoSerial(initialData?.useCases),
+    workflows: withAutoSerial(initialData?.workflows),
+    businessRules: withAutoSerial(initialData?.businessRules),
+  };
+}
 
 function normalizeSheetName(name) {
   return String(name || '')
@@ -70,7 +228,6 @@ function RichTextCell({ value, onChange, editable, onFocus }) {
         codeBlock: false,
         horizontalRule: false,
       }),
-      Underline,
     ],
     content: value || '',
     editorProps: {
@@ -107,21 +264,27 @@ export default function ModuleSpecifications({
   drawerMode = false,
 }) {
   const [activeSection, setActiveSection] = useState(initialSection);
+  const initialSections = useMemo(() => normalizeInitialSections(initialData), [initialData]);
+  const initialLayout = useMemo(() => normalizeLayout(initialData?.layout), [initialData]);
+  const [extraSections, setExtraSections] = useState(initialLayout.extraSections.map(({ key, label }) => ({ key, label })));
   const [tables, setTables] = useState({
-    useCases: Array.isArray(initialData?.useCases) ? initialData.useCases : [],
-    workflows: Array.isArray(initialData?.workflows) ? initialData.workflows : [],
-    businessRules: Array.isArray(initialData?.businessRules) ? initialData.businessRules : [],
+    useCases: initialSections.useCases,
+    workflows: initialSections.workflows,
+    businessRules: initialSections.businessRules,
+    ...Object.fromEntries(initialLayout.extraSections.map(section => [section.key, section.rows])),
   });
   const [manualColumns, setManualColumns] = useState({
     useCases: [],
     workflows: [],
     businessRules: [],
+    ...Object.fromEntries(initialLayout.extraSections.map(section => [section.key, section.columns])),
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [saveJustNow, setSaveJustNow] = useState(false);
   const [activeEditor, setActiveEditor] = useState(null);
   const [activeCell, setActiveCell] = useState(null);
-  const [columnWidths, setColumnWidths] = useState({});
-  const [rowHeights, setRowHeights] = useState({});
+  const [columnWidths, setColumnWidths] = useState(initialLayout.columnWidths);
+  const [rowHeights, setRowHeights] = useState(initialLayout.rowHeights);
   const [resizeDrag, setResizeDrag] = useState(null);
   const [headerDialog, setHeaderDialog] = useState({
     open: false,
@@ -129,47 +292,74 @@ export default function ModuleSpecifications({
     oldName: '',
     value: '',
   });
+  const [sectionDialog, setSectionDialog] = useState({
+    open: false,
+    value: '',
+  });
+  const tableScrollRef = useRef(null);
+  const wasResizingRef = useRef(false);
 
   useEffect(() => {
     setActiveSection(initialSection);
   }, [initialSection]);
 
   useEffect(() => {
-    const nextTables = {
-      useCases: Array.isArray(initialData?.useCases) ? initialData.useCases : [],
-      workflows: Array.isArray(initialData?.workflows) ? initialData.workflows : [],
-      businessRules: Array.isArray(initialData?.businessRules) ? initialData.businessRules : [],
-    };
-    setTables(nextTables);
-    setManualColumns({
-      useCases: Object.keys(nextTables.useCases?.[0] || {}),
-      workflows: Object.keys(nextTables.workflows?.[0] || {}),
-      businessRules: Object.keys(nextTables.businessRules?.[0] || {}),
+    const nextTables = initialSections;
+    const nextLayout = normalizeLayout(initialData?.layout);
+    const extraMeta = nextLayout.extraSections.map(section => ({ key: section.key, label: section.label }));
+
+    setExtraSections(extraMeta);
+    setTables({
+      ...nextTables,
+      ...Object.fromEntries(nextLayout.extraSections.map(section => [section.key, section.rows])),
     });
-  }, [initialData]);
+    setManualColumns(prev => {
+      const next = {
+        useCases: orderColumns(Array.from(new Set([...collectColumns(nextTables.useCases), ...(prev?.useCases || [])])), prev?.useCases || []),
+        workflows: orderColumns(Array.from(new Set([...collectColumns(nextTables.workflows), ...(prev?.workflows || [])])), prev?.workflows || []),
+        businessRules: orderColumns(Array.from(new Set([...collectColumns(nextTables.businessRules), ...(prev?.businessRules || [])])), prev?.businessRules || []),
+      };
+
+      nextLayout.extraSections.forEach(section => {
+        const preferred = section.columns?.length ? section.columns : (prev?.[section.key] || []);
+        next[section.key] = orderColumns(
+          Array.from(new Set([...collectColumns(section.rows), ...preferred])),
+          preferred,
+        );
+      });
+
+      return next;
+    });
+    setColumnWidths(nextLayout.columnWidths);
+    setRowHeights(nextLayout.rowHeights);
+
+    const validSections = new Set([...BASE_SECTIONS.map(section => section.key), ...extraMeta.map(section => section.key)]);
+    setActiveSection(prev => (validSections.has(prev) ? prev : initialSection));
+  }, [initialSections, initialData, initialSection]);
+
+  useEffect(() => {
+    if (!saveJustNow) return;
+    const t = window.setTimeout(() => setSaveJustNow(false), 1800);
+    return () => window.clearTimeout(t);
+  }, [saveJustNow]);
 
   const columnsBySection = useMemo(() => {
     const deriveColumns = (rows, extras = []) => {
-      const cols = [];
-      extras.forEach(col => {
-        const key = String(col || '').trim();
-        if (key && !cols.includes(key)) cols.push(key);
-      });
-      rows.forEach(row => {
-        Object.keys(row || {}).forEach(key => {
-          const k = String(key || '').trim();
-          if (k && !cols.includes(k)) cols.push(k);
-        });
-      });
-      return cols;
+      const discovered = Array.from(new Set([...(extras || []), ...collectColumns(rows)]));
+      return orderColumns(discovered, extras || []);
     };
 
-    return {
-      useCases: deriveColumns(tables.useCases, manualColumns.useCases),
-      workflows: deriveColumns(tables.workflows, manualColumns.workflows),
-      businessRules: deriveColumns(tables.businessRules, manualColumns.businessRules),
-    };
+    const out = {};
+    Object.keys(tables || {}).forEach(sectionKey => {
+      out[sectionKey] = deriveColumns(tables[sectionKey], manualColumns[sectionKey]);
+    });
+    return out;
   }, [tables, manualColumns]);
+
+  const sectionTabs = useMemo(
+    () => [...BASE_SECTIONS, ...extraSections.map(section => ({ key: section.key, label: section.label }))],
+    [extraSections],
+  );
 
   const currentRows = tables[activeSection] || [];
   const currentColumns = columnsBySection[activeSection] || [];
@@ -186,6 +376,8 @@ export default function ModuleSpecifications({
 
   useEffect(() => {
     if (!resizeDrag) return;
+
+    wasResizingRef.current = true;
 
     document.body.style.userSelect = 'none';
     document.body.style.cursor = resizeDrag.type === 'col' ? 'col-resize' : 'row-resize';
@@ -215,6 +407,13 @@ export default function ModuleSpecifications({
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
     };
+  }, [resizeDrag]);
+
+  useEffect(() => {
+    if (resizeDrag || !wasResizingRef.current || !isAdmin) return;
+    wasResizingRef.current = false;
+    const preferredColumns = buildPreferredColumns(columnsBySection, tables);
+    persistTables(tables, preferredColumns);
   }, [resizeDrag]);
 
   const startColumnResize = (column, event) => {
@@ -252,13 +451,19 @@ export default function ModuleSpecifications({
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
-      const sections = resolveWorkbookSections(workbook);
+      const rawSections = resolveWorkbookSections(workbook);
+      const sections = {
+        useCases: withAutoSerial(rawSections.useCases),
+        workflows: withAutoSerial(rawSections.workflows),
+        businessRules: withAutoSerial(rawSections.businessRules),
+      };
       setTables(sections);
       setManualColumns({
         useCases: Object.keys(sections.useCases?.[0] || {}),
         workflows: Object.keys(sections.workflows?.[0] || {}),
         businessRules: Object.keys(sections.businessRules?.[0] || {}),
       });
+      setExtraSections([]);
       setActiveSection('useCases');
     } catch {
       alert('Unable to read Excel file. Please upload a valid workbook.');
@@ -278,18 +483,193 @@ export default function ModuleSpecifications({
     }));
   };
 
+  const buildPreferredColumns = (nextManual = manualColumns, nextTables = tables) => {
+    const out = {};
+    Object.keys(nextTables || {}).forEach(sectionKey => {
+      out[sectionKey] = [...(nextManual?.[sectionKey] || [])];
+    });
+    return out;
+  };
+
+  const openAddSectionDialog = () => {
+    if (!isAdmin) return;
+    setSectionDialog({ open: true, value: '' });
+  };
+
+  const applySectionDialog = async () => {
+    if (!isAdmin) return;
+    const label = String(sectionDialog.value || '').trim();
+    if (!label) return;
+
+    const displayLabel = label;
+    const existingKeys = new Set(Object.keys(tables || {}));
+    const baseKey = normalizeSectionKey(displayLabel) || 'section';
+    let nextKey = baseKey;
+    let counter = 2;
+    while (existingKeys.has(nextKey)) {
+      nextKey = `${baseKey}_${counter}`;
+      counter += 1;
+    }
+
+    const nextExtraSections = [...extraSections, { key: nextKey, label: displayLabel }];
+    const nextTables = {
+      ...tables,
+      [nextKey]: [],
+    };
+    const nextManualColumns = {
+      ...manualColumns,
+      [nextKey]: [DEFAULT_SERIAL_COLUMN],
+    };
+    const preferredColumns = buildPreferredColumns(nextManualColumns, nextTables);
+
+    setExtraSections(nextExtraSections);
+    setTables(nextTables);
+    setManualColumns(nextManualColumns);
+    setActiveSection(nextKey);
+    setSectionDialog({ open: false, value: '' });
+    await persistTables(nextTables, preferredColumns, nextExtraSections);
+  };
+
   const addRow = () => {
     if (!isAdmin) return;
-    const columns = currentColumns.length > 0 ? currentColumns : ['Column 1'];
+    let columns = currentColumns.length > 0 ? [...currentColumns] : ['Column 1'];
+    let serialColumn = findSerialColumn(columns);
+    if (!serialColumn) {
+      serialColumn = DEFAULT_SERIAL_COLUMN;
+      columns = [serialColumn, ...columns];
+    }
+
     const newRow = {};
     columns.forEach(col => {
       newRow[col] = '';
     });
+    newRow[serialColumn] = String(currentRows.length + 1);
 
     setTables(prev => ({
       ...prev,
       [activeSection]: [...prev[activeSection], newRow],
     }));
+
+    const targetRowIndex = currentRows.length;
+    const firstEditableColumn = columns.find(col => !isSerialColumnName(col)) || columns[0];
+    setActiveCell({ section: activeSection, row: targetRowIndex, col: firstEditableColumn });
+
+    requestAnimationFrame(() => {
+      if (!tableScrollRef.current) return;
+      tableScrollRef.current.scrollTop = tableScrollRef.current.scrollHeight;
+    });
+  };
+
+  const canDeleteActiveRow = Boolean(
+    isAdmin
+      && activeCell
+      && activeCell.section === activeSection
+      && Number.isInteger(activeCell.row)
+      && activeCell.row >= 0
+      && activeCell.row < currentRows.length
+  );
+
+  const canDeleteActiveColumn = Boolean(
+    isAdmin
+      && activeCell
+      && activeCell.section === activeSection
+      && typeof activeCell.col === 'string'
+      && activeCell.col.trim()
+      && !isSerialColumnName(activeCell.col)
+      && currentColumns.length > 1
+  );
+
+  const deleteActiveRow = async () => {
+    if (!canDeleteActiveRow) return;
+
+    const rowIndex = activeCell.row;
+    const serialColumn = findSerialColumn(currentColumns) || DEFAULT_SERIAL_COLUMN;
+
+    const nextRows = (tables[activeSection] || [])
+      .filter((_, idx) => idx !== rowIndex)
+      .map((row, idx) => ({
+        ...row,
+        [serialColumn]: String(idx + 1),
+      }));
+
+    const nextTables = {
+      ...tables,
+      [activeSection]: nextRows,
+    };
+
+    const preferredColumns = buildPreferredColumns();
+
+    setTables(nextTables);
+
+    setActiveCell(null);
+    await persistTables(nextTables, preferredColumns);
+  };
+
+  const deleteActiveColumn = async () => {
+    if (!canDeleteActiveColumn) return;
+
+    const targetColumn = activeCell.col;
+
+    const nextTables = {
+      ...tables,
+      [activeSection]: (tables[activeSection] || []).map(row => {
+        const next = { ...row };
+        delete next[targetColumn];
+        return next;
+      }),
+    };
+
+    const nextManualColumns = {
+      ...manualColumns,
+      [activeSection]: (manualColumns[activeSection] || []).filter(col => col !== targetColumn),
+    };
+
+    const preferredColumns = buildPreferredColumns(nextManualColumns, nextTables);
+
+    setTables(nextTables);
+    setManualColumns(nextManualColumns);
+
+    setActiveCell(null);
+    await persistTables(nextTables, preferredColumns);
+  };
+
+  const deleteCurrentSection = async () => {
+    if (!isAdmin) return;
+
+    const isCustomSection = extraSections.some(section => section.key === activeSection);
+
+    if (isCustomSection) {
+      const nextExtraSections = extraSections.filter(section => section.key !== activeSection);
+      const { [activeSection]: _removedRows, ...nextTables } = tables;
+      const { [activeSection]: _removedColumns, ...nextManualColumns } = manualColumns;
+      const preferredColumns = buildPreferredColumns(nextManualColumns, nextTables);
+
+      setExtraSections(nextExtraSections);
+      setTables(nextTables);
+      setManualColumns(nextManualColumns);
+      setActiveCell(null);
+      setActiveSection('useCases');
+      await persistTables(nextTables, preferredColumns, nextExtraSections);
+      return;
+    }
+
+    const serialColumn = findSerialColumn(currentColumns) || DEFAULT_SERIAL_COLUMN;
+
+    const nextTables = {
+      ...tables,
+      [activeSection]: [],
+    };
+    const nextManualColumns = {
+      ...manualColumns,
+      [activeSection]: [serialColumn],
+    };
+
+    const preferredColumns = buildPreferredColumns(nextManualColumns, nextTables);
+
+    setTables(nextTables);
+    setManualColumns(nextManualColumns);
+    setActiveCell(null);
+    await persistTables(nextTables, preferredColumns);
   };
 
   const openAddHeaderDialog = () => {
@@ -334,6 +714,15 @@ export default function ModuleSpecifications({
           [value]: row?.[value] ?? '',
         })),
       }));
+
+      if ((currentRows || []).length > 0) {
+        setActiveCell({ section: activeSection, row: 0, col: value });
+      }
+
+      requestAnimationFrame(() => {
+        if (!tableScrollRef.current) return;
+        tableScrollRef.current.scrollLeft = tableScrollRef.current.scrollWidth;
+      });
     } else {
       const oldName = headerDialog.oldName;
       if (!oldName || oldName === value) {
@@ -364,27 +753,93 @@ export default function ModuleSpecifications({
     setHeaderDialog({ open: false, mode: 'add', oldName: '', value: '' });
   };
 
-  const handleSaveAll = async () => {
+  const normalizeSectionForSave = (rows, preferred) => {
+    const withSerial = withAutoSerial(rows);
+    const discovered = Array.from(new Set([...(preferred || []), ...collectColumns(withSerial)]));
+    const orderedColumns = orderColumns(discovered, preferred || []);
+    return {
+      orderedColumns,
+      rows: withSerial.map(row => reorderRowByColumns(row, orderedColumns)),
+    };
+  };
+
+  const buildLayoutPayload = (nextTables, preferredColumns, nextExtraSections) => ({
+    columnWidths: sanitizeSizeMap(columnWidths, { min: 120, max: 520 }),
+    rowHeights: sanitizeSizeMap(rowHeights, { min: 48, max: 260 }),
+    extraSections: (nextExtraSections || []).map(section => ({
+      key: section.key,
+      label: section.label,
+      rows: nextTables[section.key] || [],
+      columns: preferredColumns[section.key] || [],
+    })),
+  });
+
+  const persistTables = async (nextTables, preferredColumns, nextExtraSections = extraSections) => {
     if (!isAdmin) return;
+
     setIsSaving(true);
+    setSaveJustNow(false);
+
     try {
       const saved = await saveModuleSpecifications(moduleId, {
-        useCases: tables.useCases,
-        workflows: tables.workflows,
-        businessRules: tables.businessRules,
+        useCases: nextTables.useCases,
+        workflows: nextTables.workflows,
+        businessRules: nextTables.businessRules,
+        layout: buildLayoutPayload(nextTables, preferredColumns, nextExtraSections),
       });
-      setTables(saved);
-      setManualColumns({
-        useCases: Object.keys(saved.useCases?.[0] || {}),
-        workflows: Object.keys(saved.workflows?.[0] || {}),
-        businessRules: Object.keys(saved.businessRules?.[0] || {}),
+
+      const useCasesNorm = normalizeSectionForSave(saved.useCases, preferredColumns.useCases);
+      const workflowsNorm = normalizeSectionForSave(saved.workflows, preferredColumns.workflows);
+      const businessRulesNorm = normalizeSectionForSave(saved.businessRules, preferredColumns.businessRules);
+
+      const savedLayout = normalizeLayout(saved.layout);
+      const effectiveExtraSections = savedLayout.extraSections.length > 0
+        ? savedLayout.extraSections
+        : (nextExtraSections || []).map(section => ({
+          key: section.key,
+          label: section.label,
+          rows: nextTables[section.key] || [],
+          columns: preferredColumns[section.key] || [],
+        }));
+
+      const normalizedSaved = {
+        useCases: useCasesNorm.rows,
+        workflows: workflowsNorm.rows,
+        businessRules: businessRulesNorm.rows,
+      };
+
+      const normalizedManualColumns = {
+        useCases: useCasesNorm.orderedColumns,
+        workflows: workflowsNorm.orderedColumns,
+        businessRules: businessRulesNorm.orderedColumns,
+      };
+
+      const nextExtraMeta = [];
+      effectiveExtraSections.forEach(section => {
+        const normalized = normalizeSectionForSave(section.rows, section.columns || preferredColumns[section.key]);
+        normalizedSaved[section.key] = normalized.rows;
+        normalizedManualColumns[section.key] = normalized.orderedColumns;
+        nextExtraMeta.push({ key: section.key, label: section.label });
       });
-      onSaved?.(saved);
+
+      setTables(normalizedSaved);
+      setManualColumns(normalizedManualColumns);
+      setExtraSections(nextExtraMeta);
+      setColumnWidths(savedLayout.columnWidths);
+      setRowHeights(savedLayout.rowHeights);
+      onSaved?.({ ...normalizedSaved, layout: savedLayout });
+      setSaveJustNow(true);
     } catch (err) {
       alert(err?.response?.data?.error || err?.message || 'Failed to save module specifications.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSaveAll = async () => {
+    if (!isAdmin) return;
+    const preferredColumns = buildPreferredColumns(columnsBySection, tables);
+    await persistTables(tables, preferredColumns);
   };
 
   const rootHeightClass = 'h-full';
@@ -393,45 +848,89 @@ export default function ModuleSpecifications({
     <div className={`bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden ${rootHeightClass} ${drawerMode ? 'rounded-none border-0 border-l' : ''}`}>
       <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          {Object.entries(SECTION_META).map(([key, meta]) => (
+          {sectionTabs.map((section) => (
             <button
-              key={key}
+              key={section.key}
               type="button"
-              onClick={() => setActiveSection(key)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeSection === key ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'}`}
+              onClick={() => setActiveSection(section.key)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeSection === section.key ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'}`}
             >
-              {meta.label}
+              {section.label}
             </button>
           ))}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={openAddSectionDialog}
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+              title="Add section"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {isAdmin && (
-          <div className="flex items-center gap-2">
-            <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 cursor-pointer hover:bg-gray-50">
-              <Upload className="w-4 h-4" /> Upload Excel
-              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleUploadWorkbook} />
-            </label>
-            <button
-              type="button"
-              onClick={addRow}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
-            >
-              <Plus className="w-4 h-4" /> Add Row
-            </button>
-            <button
-              type="button"
-              onClick={openAddHeaderDialog}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
-            >
-              <Columns3 className="w-4 h-4" /> Add Column
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 cursor-pointer hover:bg-gray-50">
+                <Upload className="w-4 h-4" /> Upload Excel
+                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleUploadWorkbook} />
+              </label>
+              <button
+                type="button"
+                onClick={addRow}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Plus className="w-4 h-4" /> Add Row
+              </button>
+              <button
+                type="button"
+                onClick={openAddHeaderDialog}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Columns3 className="w-4 h-4" /> Add Column
+              </button>
+            </div>
+
+            <div className="h-6 w-px bg-gray-300" />
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={deleteActiveRow}
+                disabled={!canDeleteActiveRow}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" /> Delete Row
+              </button>
+              <button
+                type="button"
+                onClick={deleteActiveColumn}
+                disabled={!canDeleteActiveColumn}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" /> Delete Column
+              </button>
+              <button
+                type="button"
+                onClick={deleteCurrentSection}
+                disabled={!isAdmin}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 text-sm text-red-700 hover:bg-red-100 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
+            </div>
+
+            <div className="h-6 w-px bg-gray-300" />
+
             <button
               type="button"
               onClick={handleSaveAll}
               disabled={isSaving}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-60"
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-white text-sm disabled:opacity-60 ${saveJustNow ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
             >
-              <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save All'}
+              <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : saveJustNow ? 'Saved' : 'Save All'}
             </button>
           </div>
         )}
@@ -478,7 +977,7 @@ export default function ModuleSpecifications({
             {isAdmin ? 'Upload an Excel file or add a row to begin.' : 'No specifications available yet.'}
           </div>
         ) : (
-          <div className="h-full overflow-auto border border-gray-200 rounded-xl bg-white">
+          <div ref={tableScrollRef} className="h-full overflow-auto border border-gray-200 rounded-xl bg-white">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
@@ -506,6 +1005,7 @@ export default function ModuleSpecifications({
                   <tr key={`row-${rowIndex}`}>
                     {currentColumns.map((col, colIndex) => {
                       const value = row?.[col] ?? '';
+                        const serialCol = isSerialColumnName(col);
                       const isActive = activeCell?.section === activeSection && activeCell?.row === rowIndex && activeCell?.col === col;
                       const rowHeight = getRowHeight(rowIndex);
                       const colWidth = getColumnWidth(col);
@@ -513,19 +1013,25 @@ export default function ModuleSpecifications({
                       return (
                         <td
                           key={`${rowIndex}-${col}`}
-                          className={`border border-gray-200 align-top transition-colors relative ${isActive ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300' : 'bg-white'}`}
+                          className={`border border-gray-200 align-top transition-colors relative ${isActive ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-blue-50/60'}`}
                           style={{ width: `${colWidth}px`, minWidth: `${colWidth}px`, height: `${rowHeight}px` }}
                           onClick={() => setActiveCell({ section: activeSection, row: rowIndex, col })}
                         >
-                          <RichTextCell
-                            value={String(value)}
-                            onChange={(next) => updateCell(activeSection, rowIndex, col, next)}
-                            editable={isAdmin}
-                            onFocus={(editor) => {
-                              setActiveCell({ section: activeSection, row: rowIndex, col });
-                              setActiveEditor(editor);
-                            }}
-                          />
+                          {serialCol ? (
+                            <div className="min-h-[44px] text-sm text-gray-700 px-1.5 py-1">
+                              {String(value || rowIndex + 1)}
+                            </div>
+                          ) : (
+                            <RichTextCell
+                              value={String(value)}
+                              onChange={(next) => updateCell(activeSection, rowIndex, col, next)}
+                              editable={isAdmin}
+                              onFocus={(editor) => {
+                                setActiveCell({ section: activeSection, row: rowIndex, col });
+                                setActiveEditor(editor);
+                              }}
+                            />
+                          )}
                           {isAdmin && colIndex === 0 && (
                             <span
                               onMouseDown={(e) => startRowResize(rowIndex, e)}
@@ -574,6 +1080,41 @@ export default function ModuleSpecifications({
                 className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700"
               >
                 {headerDialog.mode === 'add' ? 'Add' : 'Rename'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sectionDialog.open && (
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-xl border border-gray-200 shadow-xl p-4">
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Add Section</h3>
+            <input
+              autoFocus
+              value={sectionDialog.value}
+              onChange={(e) => setSectionDialog(prev => ({ ...prev, value: e.target.value }))}
+              placeholder="Section name"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applySectionDialog();
+                if (e.key === 'Escape') setSectionDialog({ open: false, value: '' });
+              }}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSectionDialog({ open: false, value: '' })}
+                className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applySectionDialog}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700"
+              >
+                Add
               </button>
             </div>
           </div>

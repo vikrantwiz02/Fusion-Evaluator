@@ -7,6 +7,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
   }
 });
+let supportsSpecificationsEndpoint = true;
 
 // Attach JWT token from localStorage on every request
 api.interceptors.request.use((config) => {
@@ -115,40 +116,64 @@ export const mergePairs = async (moduleId, poorPairId, highPairId) => {
 };
 
 export const fetchModuleSpecifications = async (moduleId) => {
-  const { data } = await api.get(`/modules/${moduleId}/specifications`);
+  if (supportsSpecificationsEndpoint) {
+    try {
+      const { data } = await api.get(`/modules/${moduleId}/specifications`);
+      return {
+        useCases: Array.isArray(data?.useCases) ? data.useCases : [],
+        workflows: Array.isArray(data?.workflows) ? data.workflows : [],
+        businessRules: Array.isArray(data?.businessRules) ? data.businessRules : [],
+        layout: data?.layout && typeof data.layout === 'object' && !Array.isArray(data.layout) ? data.layout : {},
+      };
+    } catch (error) {
+      if (error?.response?.status !== 404) {
+        throw error;
+      }
+      supportsSpecificationsEndpoint = false;
+    }
+  }
+
+  const { data } = await api.get(`/modules/${moduleId}`);
   return {
-    useCases: Array.isArray(data?.useCases) ? data.useCases : [],
-    workflows: Array.isArray(data?.workflows) ? data.workflows : [],
-    businessRules: Array.isArray(data?.businessRules) ? data.businessRules : [],
+    useCases: Array.isArray(data?.spec_use_cases) ? data.spec_use_cases : [],
+    workflows: Array.isArray(data?.spec_workflows) ? data.spec_workflows : [],
+    businessRules: Array.isArray(data?.spec_rules) ? data.spec_rules : [],
+    layout: data?.spec_layout && typeof data.spec_layout === 'object' && !Array.isArray(data.spec_layout) ? data.spec_layout : {},
   };
 };
 
 export const saveModuleSpecifications = async (moduleId, payload) => {
-  try {
-    const { data } = await api.put(`/modules/${moduleId}/specifications`, payload);
-    return {
-      useCases: Array.isArray(data?.useCases) ? data.useCases : [],
-      workflows: Array.isArray(data?.workflows) ? data.workflows : [],
-      businessRules: Array.isArray(data?.businessRules) ? data.businessRules : [],
-    };
-  } catch (error) {
-    if (error?.response?.status !== 404) {
-      throw error;
+  if (supportsSpecificationsEndpoint) {
+    try {
+      const { data } = await api.put(`/modules/${moduleId}/specifications`, payload);
+      return {
+        useCases: Array.isArray(data?.useCases) ? data.useCases : [],
+        workflows: Array.isArray(data?.workflows) ? data.workflows : [],
+        businessRules: Array.isArray(data?.businessRules) ? data.businessRules : [],
+        layout: data?.layout && typeof data.layout === 'object' && !Array.isArray(data.layout) ? data.layout : {},
+      };
+    } catch (error) {
+      if (error?.response?.status !== 404) {
+        throw error;
+      }
+      supportsSpecificationsEndpoint = false;
     }
-
-    // Backward-compatible fallback for older backend instances missing the new endpoint.
-    const { data } = await api.put(`/modules/${moduleId}`, {
-      spec_use_cases: payload.useCases,
-      spec_workflows: payload.workflows,
-      spec_rules: payload.businessRules,
-    });
-
-    return {
-      useCases: Array.isArray(data?.spec_use_cases) ? data.spec_use_cases : [],
-      workflows: Array.isArray(data?.spec_workflows) ? data.spec_workflows : [],
-      businessRules: Array.isArray(data?.spec_rules) ? data.spec_rules : [],
-    };
   }
+
+  // Backward-compatible fallback for backend instances missing the dedicated endpoint.
+  const { data } = await api.put(`/modules/${moduleId}`, {
+    spec_use_cases: payload.useCases,
+    spec_workflows: payload.workflows,
+    spec_rules: payload.businessRules,
+    spec_layout: payload.layout,
+  });
+
+  return {
+    useCases: Array.isArray(data?.spec_use_cases) ? data.spec_use_cases : [],
+    workflows: Array.isArray(data?.spec_workflows) ? data.spec_workflows : [],
+    businessRules: Array.isArray(data?.spec_rules) ? data.spec_rules : [],
+    layout: data?.spec_layout && typeof data.spec_layout === 'object' && !Array.isArray(data.spec_layout) ? data.spec_layout : {},
+  };
 };
 
 // ── Division CRUD ──────────────────────────────────────────────────────────────

@@ -41,6 +41,21 @@ function normalizeEvaluationPayload(payload) {
   return normalized;
 }
 
+function normalizeSpecRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter(row => row && typeof row === 'object' && !Array.isArray(row))
+    .map(row => {
+      const clean = {};
+      for (const [key, value] of Object.entries(row)) {
+        const k = String(key || '').trim();
+        if (!k) continue;
+        clean[k] = value == null ? '' : value;
+      }
+      return clean;
+    });
+}
+
 // Simple connection handler
 const mongooseReady = mongoose.connection.readyState === 1 
   ? Promise.resolve() 
@@ -241,6 +256,54 @@ export default async function handler(req, res) {
 
       await mod.save();
       return res.json({ success: true });
+    }
+
+    // GET /api/lab-manager/modules/:id/specifications
+    if (req.method === 'GET' && path[0] === 'specifications') {
+      const mod = await Module.findById(id);
+      if (!mod) return res.status(404).json({ error: 'Module not found' });
+      if (!canAccessModule(mod, actor)) {
+        return res.status(403).json({ error: 'Access denied for this module' });
+      }
+
+      return res.status(200).json({
+        useCases: Array.isArray(mod.spec_use_cases) ? mod.spec_use_cases : [],
+        workflows: Array.isArray(mod.spec_workflows) ? mod.spec_workflows : [],
+        businessRules: Array.isArray(mod.spec_rules) ? mod.spec_rules : [],
+        layout: mod.spec_layout && typeof mod.spec_layout === 'object' && !Array.isArray(mod.spec_layout)
+          ? mod.spec_layout
+          : { columnWidths: {}, rowHeights: {}, extraSections: [] },
+      });
+    }
+
+    // PUT /api/lab-manager/modules/:id/specifications
+    if (req.method === 'PUT' && path[0] === 'specifications') {
+      const mod = await Module.findById(id);
+      if (!mod) return res.status(404).json({ error: 'Module not found' });
+      if (!canAccessModule(mod, actor)) {
+        return res.status(403).json({ error: 'Access denied for this module' });
+      }
+      if (actor.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      mod.spec_use_cases = normalizeSpecRows(req.body?.useCases);
+      mod.spec_workflows = normalizeSpecRows(req.body?.workflows);
+      mod.spec_rules = normalizeSpecRows(req.body?.businessRules);
+      mod.spec_layout = (req.body?.layout && typeof req.body.layout === 'object' && !Array.isArray(req.body.layout))
+        ? req.body.layout
+        : { columnWidths: {}, rowHeights: {}, extraSections: [] };
+
+      await mod.save();
+      return res.status(200).json({
+        success: true,
+        useCases: Array.isArray(mod.spec_use_cases) ? mod.spec_use_cases : [],
+        workflows: Array.isArray(mod.spec_workflows) ? mod.spec_workflows : [],
+        businessRules: Array.isArray(mod.spec_rules) ? mod.spec_rules : [],
+        layout: mod.spec_layout && typeof mod.spec_layout === 'object' && !Array.isArray(mod.spec_layout)
+          ? mod.spec_layout
+          : { columnWidths: {}, rowHeights: {}, extraSections: [] },
+      });
     }
 
     res.status(404).json({ error: 'Route not found' });

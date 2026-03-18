@@ -18,6 +18,7 @@ model Module {
   spec_use_cases  Json            @default("[]")
   spec_workflows  Json            @default("[]")
   spec_rules      Json            @default("[]")
+  spec_layout     Json            @default("{}")
   groups          Group[]
   divisions       GroupDivision[]
   created_at      DateTime        @default(now())

@@ -175,7 +175,11 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const [dragOverZone, setDragOverZone] = useState(null);
   const [primaryView, setPrimaryView] = useState('evaluation');
   const [sideBySide, setSideBySide] = useState(false);
-  const [drawerSection, setDrawerSection] = useState('businessRules');
+  const sidebarCollapsed = primaryView === 'evaluation' && sideBySide;
+
+  const toggleSideBySide = () => {
+    setSideBySide(prev => !prev);
+  };
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
@@ -459,6 +463,9 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     useCases: Array.isArray(moduleData?.spec_use_cases) ? moduleData.spec_use_cases : [],
     workflows: Array.isArray(moduleData?.spec_workflows) ? moduleData.spec_workflows : [],
     businessRules: Array.isArray(moduleData?.spec_rules) ? moduleData.spec_rules : [],
+    layout: moduleData?.spec_layout && typeof moduleData.spec_layout === 'object' && !Array.isArray(moduleData.spec_layout)
+      ? moduleData.spec_layout
+      : {},
   }), [moduleData]);
 
   const handleSpecificationsSaved = (saved) => {
@@ -469,6 +476,9 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         spec_use_cases: saved.useCases,
         spec_workflows: saved.workflows,
         spec_rules: saved.businessRules,
+        spec_layout: saved.layout && typeof saved.layout === 'object' && !Array.isArray(saved.layout)
+          ? saved.layout
+          : {},
       };
     });
   };
@@ -485,31 +495,63 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     <div className="flex flex-col h-full min-h-0 bg-gray-50">
 
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 px-6 py-4 flex justify-between items-center shrink-0">
-        <div>
-          {onBack && (
-            <button onClick={onBack} className="flex items-center text-sm text-indigo-600 hover:text-indigo-800 mb-1 transition-colors cursor-pointer">
-              <ArrowLeft className="w-4 h-4 mr-1" /> Back to Modules
-            </button>
-          )}
-          <h1 className="text-2xl font-bold text-gray-900">{moduleData.name}</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Domain Lead Evaluation Dashboard</p>
-        </div>
-        <div className="flex items-center space-x-2">
-          {isAdmin && (
-            <button
-              onClick={() => setAddDivisionModalOpen(true)}
-              className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
-            >
-              <FolderOpen className="w-4 h-4 mr-1.5" /> Add Division
-            </button>
-          )}
-          <button
-            onClick={() => openAddPairModal(null)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center text-sm font-medium transition-colors cursor-pointer shadow-sm"
-          >
-            <Plus className="w-4 h-4 mr-2" /> Add Pair
-          </button>
+      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 px-6 py-4 shrink-0">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            {onBack && (
+              <button onClick={onBack} className="flex items-center text-sm text-indigo-600 hover:text-indigo-800 mb-1 transition-colors cursor-pointer">
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back to Modules
+              </button>
+            )}
+            <h1 className="text-2xl font-bold text-gray-900">{moduleData.name}</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Domain Lead Evaluation Dashboard</p>
+          </div>
+
+          <div className="ml-auto flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              {primaryView === 'evaluation' && (
+                <div className="flex items-center gap-2 mr-1">
+                  <span className="text-xs text-gray-500">Side-by-Side</span>
+                  <button
+                    onClick={toggleSideBySide}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${sideBySide ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                  >
+                    {sideBySide ? 'On' : 'Off'}
+                  </button>
+                </div>
+              )}
+
+              {isAdmin && (
+                <button
+                  onClick={() => setAddDivisionModalOpen(true)}
+                  className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
+                >
+                  <FolderOpen className="w-4 h-4 mr-1.5" /> Add Division
+                </button>
+              )}
+              <button
+                onClick={() => openAddPairModal(null)}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center text-sm font-medium transition-colors cursor-pointer shadow-sm"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Add Pair
+              </button>
+            </div>
+
+            <div className="inline-flex items-center rounded-2xl border border-slate-200 bg-slate-100 p-1.5 shadow-inner">
+              <button
+                onClick={() => setPrimaryView('specifications')}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${primaryView === 'specifications' ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/70'}`}
+              >
+                Module Specifications
+              </button>
+              <button
+                onClick={() => setPrimaryView('evaluation')}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${primaryView === 'evaluation' ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/70'}`}
+              >
+                Evaluation View
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -517,7 +559,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       <div className="flex flex-1 overflow-hidden">
 
         {/* Sidebar */}
-        <div className="w-80 bg-white border-r border-gray-200 flex flex-col shrink-0">
+        <div className={`${sidebarCollapsed ? 'w-0 border-r-0' : 'w-80 border-r border-gray-200'} bg-white flex flex-col shrink-0 overflow-hidden transition-all duration-300`}>
           <div className="p-4 border-b border-gray-100">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -611,35 +653,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         </div>
 
         {/* Evaluation Details */}
-        <div className={`flex-1 bg-gray-50 p-6 relative min-h-0 ${primaryView === 'specifications' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          <div className="max-w-5xl mx-auto mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="inline-flex items-center rounded-2xl border border-slate-200 bg-slate-100 p-1.5 shadow-inner">
-              <button
-                onClick={() => setPrimaryView('specifications')}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${primaryView === 'specifications' ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/70'}`}
-              >
-                Module Specifications
-              </button>
-              <button
-                onClick={() => setPrimaryView('evaluation')}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${primaryView === 'evaluation' ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/70'}`}
-              >
-                Evaluation View
-              </button>
-            </div>
-
-            {primaryView === 'evaluation' && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Side-by-Side</span>
-                <button
-                  onClick={() => setSideBySide(v => !v)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${sideBySide ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
-                >
-                  {sideBySide ? 'On' : 'Off'}
-                </button>
-              </div>
-            )}
-          </div>
+        <div className={`flex-1 bg-gray-50 p-6 relative min-h-0 ${primaryView === 'evaluation' && !sideBySide ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
           {primaryView === 'specifications' ? (
             <div className="max-w-5xl mx-auto h-full min-h-0">
@@ -652,7 +666,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
             </div>
           ) : (
             <>
-              <div className={`transition-all duration-300 ${sideBySide ? 'pr-[44%]' : ''}`}>
+              <div className={`transition-all duration-300 ${sideBySide ? 'h-full overflow-y-auto pr-[35%]' : ''}`}>
           {selectedGroup ? (
             <div className="max-w-5xl mx-auto space-y-6">
 
@@ -811,38 +825,28 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
               </div>
 
               <aside
-                className={`absolute top-0 right-0 h-full w-[44%] bg-white border-l border-gray-200 shadow-xl transition-transform duration-300 ${sideBySide ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+                className={`absolute top-0 right-0 h-full w-[35%] bg-gray-50 border-l border-gray-200 transition-transform duration-300 ${sideBySide ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
               >
-                <div className="h-full flex flex-col">
-                  <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-800">Module Specifications</h3>
-                    <button
-                      onClick={() => setSideBySide(false)}
-                      className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
-                    >
-                      Collapse
-                    </button>
-                  </div>
-                  <div className="px-4 py-2 border-b border-gray-100 bg-white flex items-center gap-2">
-                    {[{ key: 'useCases', label: 'Use Cases' }, { key: 'workflows', label: 'Workflows' }, { key: 'businessRules', label: 'Business Rules' }].map(item => (
+                <div className="h-full p-4">
+                  <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-800">Module Specifications (View Only)</h3>
                       <button
-                        key={item.key}
-                        onClick={() => setDrawerSection(item.key)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium ${drawerSection === item.key ? 'bg-indigo-600 text-white' : 'text-gray-600 border border-gray-200 hover:bg-gray-50'}`}
+                        onClick={() => setSideBySide(false)}
+                        className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
                       >
-                        {item.label}
+                        Collapse
                       </button>
-                    ))}
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <ModuleSpecifications
-                      moduleId={moduleId}
-                      isAdmin={isAdmin}
-                      initialData={moduleSpecificationsData}
-                      initialSection={drawerSection}
-                      onSaved={handleSpecificationsSaved}
-                      drawerMode
-                    />
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <ModuleSpecifications
+                        moduleId={moduleId}
+                        isAdmin={false}
+                        initialData={moduleSpecificationsData}
+                        onSaved={handleSpecificationsSaved}
+                        drawerMode
+                      />
+                    </div>
                   </div>
                 </div>
               </aside>
