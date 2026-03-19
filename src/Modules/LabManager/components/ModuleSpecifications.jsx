@@ -7,9 +7,11 @@ import { saveModuleSpecifications } from '../api';
 
 const BASE_SECTIONS = [
   { key: 'useCases', label: 'Use Cases' },
-  { key: 'workflows', label: 'Workflows' },
   { key: 'businessRules', label: 'Business Rules' },
+  { key: 'workflows', label: 'Workflows' },
 ];
+
+const DEFAULT_SECTION_ORDER = BASE_SECTIONS.map(section => section.key);
 
 const DEFAULT_SERIAL_COLUMN = 'S.No.';
 const SERIAL_ALIASES = ['s.no.', 's.no', 'sno', 'sr.no', 'sr no', 'serial no', 'serial_no', 's_no'];
@@ -62,10 +64,14 @@ function withAutoSerial(rows) {
     new Set(cleanRows.flatMap(row => Object.keys(row || {}).map(key => String(key || '').trim()).filter(Boolean)))
   );
 
-  const serialColumn = findSerialColumn(allColumns) || DEFAULT_SERIAL_COLUMN;
+  const existingSerial = findSerialColumn(allColumns);
+  const serialColumn = existingSerial || DEFAULT_SERIAL_COLUMN;
 
   return cleanRows.map((row, index) => {
-    const next = { ...row };
+    const next = existingSerial
+      ? { ...row }
+      : { [serialColumn]: '', ...row };
+
     if (next[serialColumn] === undefined || String(next[serialColumn]).trim() === '') {
       next[serialColumn] = String(index + 1);
     }
@@ -97,11 +103,6 @@ function orderColumns(discovered = [], preferred = []) {
     if (c && !ordered.includes(c)) ordered.push(c);
   });
 
-  const serialColumn = findSerialColumn(ordered);
-  if (serialColumn) {
-    return [serialColumn, ...ordered.filter(col => col !== serialColumn)];
-  }
-
   return ordered;
 }
 
@@ -121,6 +122,51 @@ function normalizeSectionKey(value) {
     .replace(/^_+|_+$/g, '');
 }
 
+function normalizeSectionOrder(order, validKeys) {
+  const seen = new Set();
+  const out = [];
+
+  (Array.isArray(order) ? order : []).forEach(raw => {
+    const key = String(raw || '').trim();
+    if (!key || seen.has(key) || !validKeys.includes(key)) return;
+    seen.add(key);
+    out.push(key);
+  });
+
+  validKeys.forEach(key => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  });
+
+  return out;
+}
+
+function normalizeSectionColumnsMap(value, validKeys) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+  const out = {};
+  validKeys.forEach(sectionKey => {
+    const raw = value[sectionKey];
+    if (!Array.isArray(raw)) return;
+    const seen = new Set();
+    const cols = [];
+
+    raw.forEach(col => {
+      const key = String(col || '').trim();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      cols.push(key);
+    });
+
+    if (cols.length > 0) {
+      out[sectionKey] = cols;
+    }
+  });
+
+  return out;
+}
+
 function sanitizeSizeMap(value, { min, max }) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const out = {};
@@ -134,7 +180,7 @@ function sanitizeSizeMap(value, { min, max }) {
 
 function normalizeLayout(layout) {
   if (!layout || typeof layout !== 'object' || Array.isArray(layout)) {
-    return { columnWidths: {}, rowHeights: {}, extraSections: [] };
+    return { columnWidths: {}, rowHeights: {}, extraSections: [], sectionOrder: DEFAULT_SECTION_ORDER, sectionColumns: {} };
   }
 
   const rawExtra = Array.isArray(layout.extraSections) ? layout.extraSections : [];
@@ -155,10 +201,16 @@ function normalizeLayout(layout) {
     })
     .filter(Boolean);
 
+  const validKeys = [...DEFAULT_SECTION_ORDER, ...extraSections.map(section => section.key)];
+  const sectionOrder = normalizeSectionOrder(layout.sectionOrder, validKeys);
+  const sectionColumns = normalizeSectionColumnsMap(layout.sectionColumns, validKeys);
+
   return {
     columnWidths: sanitizeSizeMap(layout.columnWidths, { min: 120, max: 520 }),
     rowHeights: sanitizeSizeMap(layout.rowHeights, { min: 48, max: 260 }),
     extraSections,
+    sectionOrder,
+    sectionColumns,
   };
 }
 
@@ -261,12 +313,17 @@ export default function ModuleSpecifications({
   initialData,
   initialSection = 'useCases',
   onSaved,
+  onAutoSaveStatusChange,
   drawerMode = false,
+  autoSave = false,
 }) {
   const [activeSection, setActiveSection] = useState(initialSection);
   const initialSections = useMemo(() => normalizeInitialSections(initialData), [initialData]);
   const initialLayout = useMemo(() => normalizeLayout(initialData?.layout), [initialData]);
   const [extraSections, setExtraSections] = useState(initialLayout.extraSections.map(({ key, label }) => ({ key, label })));
+  const sectionOrderStorageKey = useMemo(() => `module-spec-section-order:${moduleId}`, [moduleId]);
+  const sectionColumnsStorageKey = useMemo(() => `module-spec-section-columns:${moduleId}`, [moduleId]);
+  const [sectionOrder, setSectionOrder] = useState(initialLayout.sectionOrder);
   const [tables, setTables] = useState({
     useCases: initialSections.useCases,
     workflows: initialSections.workflows,
@@ -274,10 +331,10 @@ export default function ModuleSpecifications({
     ...Object.fromEntries(initialLayout.extraSections.map(section => [section.key, section.rows])),
   });
   const [manualColumns, setManualColumns] = useState({
-    useCases: [],
-    workflows: [],
-    businessRules: [],
-    ...Object.fromEntries(initialLayout.extraSections.map(section => [section.key, section.columns])),
+    useCases: initialLayout.sectionColumns.useCases || [],
+    workflows: initialLayout.sectionColumns.workflows || [],
+    businessRules: initialLayout.sectionColumns.businessRules || [],
+    ...Object.fromEntries(initialLayout.extraSections.map(section => [section.key, initialLayout.sectionColumns[section.key] || section.columns])),
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveJustNow, setSaveJustNow] = useState(false);
@@ -296,32 +353,131 @@ export default function ModuleSpecifications({
     open: false,
     value: '',
   });
+  const [draggedSectionKey, setDraggedSectionKey] = useState('');
+  const sectionOrderRef = useRef(initialLayout.sectionOrder);
+  const isSavingRef = useRef(false);
+  const hasAutoSaveInitializedRef = useRef(false);
+  const autoSaveTimerRef = useRef(null);
+  const lastPersistedSnapshotRef = useRef('');
   const tableScrollRef = useRef(null);
   const wasResizingRef = useRef(false);
+
+  const buildLayoutPayload = (nextTables, preferredColumns, nextExtraSections, nextSectionOrder, nextColumnWidths = columnWidths, nextRowHeights = rowHeights) => {
+    const validKeys = [...DEFAULT_SECTION_ORDER, ...(nextExtraSections || []).map(section => section.key)];
+    const orderedKeys = normalizeSectionOrder(nextSectionOrder, validKeys);
+
+    return {
+      columnWidths: sanitizeSizeMap(nextColumnWidths, { min: 120, max: 520 }),
+      rowHeights: sanitizeSizeMap(nextRowHeights, { min: 48, max: 260 }),
+      sectionOrder: orderedKeys,
+      sectionColumns: Object.fromEntries(
+        Object.keys(nextTables || {}).map(sectionKey => [sectionKey, preferredColumns[sectionKey] || []]),
+      ),
+      extraSections: (nextExtraSections || []).map(section => ({
+        key: section.key,
+        label: section.label,
+        rows: nextTables[section.key] || [],
+        columns: preferredColumns[section.key] || [],
+      })),
+    };
+  };
+
+  const buildSnapshot = (
+    nextTables,
+    nextManualColumns,
+    nextExtraSections,
+    nextSectionOrder,
+    nextColumnWidths = columnWidths,
+    nextRowHeights = rowHeights,
+  ) => {
+    const preferredColumns = buildPreferredColumns(nextManualColumns, nextTables);
+    return JSON.stringify({
+      useCases: nextTables.useCases || [],
+      workflows: nextTables.workflows || [],
+      businessRules: nextTables.businessRules || [],
+      layout: buildLayoutPayload(
+        nextTables,
+        preferredColumns,
+        nextExtraSections,
+        nextSectionOrder,
+        nextColumnWidths,
+        nextRowHeights,
+      ),
+    });
+  };
 
   useEffect(() => {
     setActiveSection(initialSection);
   }, [initialSection]);
 
   useEffect(() => {
+    sectionOrderRef.current = sectionOrder;
+  }, [sectionOrder]);
+
+  useEffect(() => {
+    isSavingRef.current = isSaving;
+  }, [isSaving]);
+
+  useEffect(() => {
     const nextTables = initialSections;
     const nextLayout = normalizeLayout(initialData?.layout);
     const extraMeta = nextLayout.extraSections.map(section => ({ key: section.key, label: section.label }));
+    const validKeys = [...DEFAULT_SECTION_ORDER, ...extraMeta.map(section => section.key)];
+    let nextSectionOrder = normalizeSectionOrder(nextLayout.sectionOrder, validKeys);
+
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem(sectionOrderStorageKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          nextSectionOrder = normalizeSectionOrder(parsed, validKeys);
+        }
+      } catch {
+        // Ignore malformed localStorage values.
+      }
+
+      try {
+        const storedCols = window.localStorage.getItem(sectionColumnsStorageKey);
+        if (storedCols) {
+          const parsedCols = JSON.parse(storedCols);
+          nextLayout.sectionColumns = {
+            ...nextLayout.sectionColumns,
+            ...normalizeSectionColumnsMap(parsedCols, validKeys),
+          };
+        }
+      } catch {
+        // Ignore malformed localStorage values.
+      }
+    }
 
     setExtraSections(extraMeta);
+    setSectionOrder(nextSectionOrder);
+    sectionOrderRef.current = nextSectionOrder;
     setTables({
       ...nextTables,
       ...Object.fromEntries(nextLayout.extraSections.map(section => [section.key, section.rows])),
     });
     setManualColumns(prev => {
+      const preferredUseCases = nextLayout.sectionColumns.useCases?.length
+        ? nextLayout.sectionColumns.useCases
+        : (prev?.useCases || []);
+      const preferredWorkflows = nextLayout.sectionColumns.workflows?.length
+        ? nextLayout.sectionColumns.workflows
+        : (prev?.workflows || []);
+      const preferredBusinessRules = nextLayout.sectionColumns.businessRules?.length
+        ? nextLayout.sectionColumns.businessRules
+        : (prev?.businessRules || []);
+
       const next = {
-        useCases: orderColumns(Array.from(new Set([...collectColumns(nextTables.useCases), ...(prev?.useCases || [])])), prev?.useCases || []),
-        workflows: orderColumns(Array.from(new Set([...collectColumns(nextTables.workflows), ...(prev?.workflows || [])])), prev?.workflows || []),
-        businessRules: orderColumns(Array.from(new Set([...collectColumns(nextTables.businessRules), ...(prev?.businessRules || [])])), prev?.businessRules || []),
+        useCases: orderColumns(Array.from(new Set([...collectColumns(nextTables.useCases), ...preferredUseCases])), preferredUseCases),
+        workflows: orderColumns(Array.from(new Set([...collectColumns(nextTables.workflows), ...preferredWorkflows])), preferredWorkflows),
+        businessRules: orderColumns(Array.from(new Set([...collectColumns(nextTables.businessRules), ...preferredBusinessRules])), preferredBusinessRules),
       };
 
       nextLayout.extraSections.forEach(section => {
-        const preferred = section.columns?.length ? section.columns : (prev?.[section.key] || []);
+        const preferred = nextLayout.sectionColumns[section.key]?.length
+          ? nextLayout.sectionColumns[section.key]
+          : (section.columns?.length ? section.columns : (prev?.[section.key] || []));
         next[section.key] = orderColumns(
           Array.from(new Set([...collectColumns(section.rows), ...preferred])),
           preferred,
@@ -332,16 +488,103 @@ export default function ModuleSpecifications({
     });
     setColumnWidths(nextLayout.columnWidths);
     setRowHeights(nextLayout.rowHeights);
+    lastPersistedSnapshotRef.current = buildSnapshot(
+      {
+        ...nextTables,
+        ...Object.fromEntries(nextLayout.extraSections.map(section => [section.key, section.rows])),
+      },
+      {
+        useCases: nextLayout.sectionColumns.useCases || [],
+        workflows: nextLayout.sectionColumns.workflows || [],
+        businessRules: nextLayout.sectionColumns.businessRules || [],
+        ...Object.fromEntries(nextLayout.extraSections.map(section => [section.key, nextLayout.sectionColumns[section.key] || section.columns || []])),
+      },
+      extraMeta,
+      nextSectionOrder,
+      nextLayout.columnWidths,
+      nextLayout.rowHeights,
+    );
+    hasAutoSaveInitializedRef.current = false;
 
     const validSections = new Set([...BASE_SECTIONS.map(section => section.key), ...extraMeta.map(section => section.key)]);
     setActiveSection(prev => (validSections.has(prev) ? prev : initialSection));
-  }, [initialSections, initialData, initialSection]);
+  }, [initialSections, initialData, initialSection, sectionOrderStorageKey, sectionColumnsStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(sectionOrderStorageKey, JSON.stringify(sectionOrder));
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [sectionOrder, sectionOrderStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const validKeys = [...DEFAULT_SECTION_ORDER, ...extraSections.map(section => section.key)];
+    const sectionColumns = normalizeSectionColumnsMap(manualColumns, validKeys);
+    try {
+      window.localStorage.setItem(sectionColumnsStorageKey, JSON.stringify(sectionColumns));
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, [manualColumns, extraSections, sectionColumnsStorageKey]);
+
+  useEffect(() => {
+    if (!autoSave || !isAdmin) return undefined;
+
+    const snapshot = buildSnapshot(tables, manualColumns, extraSections, sectionOrder, columnWidths, rowHeights);
+    if (!hasAutoSaveInitializedRef.current) {
+      hasAutoSaveInitializedRef.current = true;
+      if (!lastPersistedSnapshotRef.current) {
+        lastPersistedSnapshotRef.current = snapshot;
+      }
+      return undefined;
+    }
+
+    if (snapshot === lastPersistedSnapshotRef.current || isSavingRef.current) {
+      return undefined;
+    }
+
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = window.setTimeout(async () => {
+      if (isSavingRef.current) return;
+      const preferredColumns = buildPreferredColumns(manualColumns, tables);
+      await persistTables(tables, preferredColumns, extraSections, sectionOrder, snapshot);
+    }, 700);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        window.clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [autoSave, isAdmin, tables, manualColumns, extraSections, sectionOrder, columnWidths, rowHeights]);
 
   useEffect(() => {
     if (!saveJustNow) return;
     const t = window.setTimeout(() => setSaveJustNow(false), 1800);
     return () => window.clearTimeout(t);
   }, [saveJustNow]);
+
+  useEffect(() => {
+    if (!onAutoSaveStatusChange) return;
+    if (!autoSave || !isAdmin) {
+      onAutoSaveStatusChange('off');
+      return;
+    }
+    if (isSaving) {
+      onAutoSaveStatusChange('saving');
+      return;
+    }
+    if (saveJustNow) {
+      onAutoSaveStatusChange('saved');
+      return;
+    }
+    onAutoSaveStatusChange('idle');
+  }, [autoSave, isAdmin, isSaving, saveJustNow, onAutoSaveStatusChange]);
 
   const columnsBySection = useMemo(() => {
     const deriveColumns = (rows, extras = []) => {
@@ -356,10 +599,17 @@ export default function ModuleSpecifications({
     return out;
   }, [tables, manualColumns]);
 
-  const sectionTabs = useMemo(
-    () => [...BASE_SECTIONS, ...extraSections.map(section => ({ key: section.key, label: section.label }))],
-    [extraSections],
-  );
+  const sectionTabs = useMemo(() => {
+    const byKey = new Map([
+      ...BASE_SECTIONS,
+      ...extraSections.map(section => ({ key: section.key, label: section.label })),
+    ].map(section => [section.key, section]));
+
+    const validKeys = [...DEFAULT_SECTION_ORDER, ...extraSections.map(section => section.key)];
+    const orderedKeys = normalizeSectionOrder(sectionOrder, validKeys);
+
+    return orderedKeys.map(key => byKey.get(key)).filter(Boolean);
+  }, [extraSections, sectionOrder]);
 
   const currentRows = tables[activeSection] || [];
   const currentColumns = columnsBySection[activeSection] || [];
@@ -459,11 +709,13 @@ export default function ModuleSpecifications({
       };
       setTables(sections);
       setManualColumns({
-        useCases: Object.keys(sections.useCases?.[0] || {}),
-        workflows: Object.keys(sections.workflows?.[0] || {}),
-        businessRules: Object.keys(sections.businessRules?.[0] || {}),
+        useCases: collectColumns(sections.useCases),
+        workflows: collectColumns(sections.workflows),
+        businessRules: collectColumns(sections.businessRules),
       });
       setExtraSections([]);
+      setSectionOrder(DEFAULT_SECTION_ORDER);
+      sectionOrderRef.current = DEFAULT_SECTION_ORDER;
       setActiveSection('useCases');
     } catch {
       alert('Unable to read Excel file. Please upload a valid workbook.');
@@ -512,6 +764,7 @@ export default function ModuleSpecifications({
     }
 
     const nextExtraSections = [...extraSections, { key: nextKey, label: displayLabel }];
+    const nextSectionOrder = [...sectionOrder, nextKey];
     const nextTables = {
       ...tables,
       [nextKey]: [],
@@ -523,11 +776,13 @@ export default function ModuleSpecifications({
     const preferredColumns = buildPreferredColumns(nextManualColumns, nextTables);
 
     setExtraSections(nextExtraSections);
+    setSectionOrder(nextSectionOrder);
+    sectionOrderRef.current = nextSectionOrder;
     setTables(nextTables);
     setManualColumns(nextManualColumns);
     setActiveSection(nextKey);
     setSectionDialog({ open: false, value: '' });
-    await persistTables(nextTables, preferredColumns, nextExtraSections);
+    await persistTables(nextTables, preferredColumns, nextExtraSections, nextSectionOrder);
   };
 
   const addRow = () => {
@@ -640,16 +895,19 @@ export default function ModuleSpecifications({
 
     if (isCustomSection) {
       const nextExtraSections = extraSections.filter(section => section.key !== activeSection);
+      const nextSectionOrder = sectionOrder.filter(key => key !== activeSection);
       const { [activeSection]: _removedRows, ...nextTables } = tables;
       const { [activeSection]: _removedColumns, ...nextManualColumns } = manualColumns;
       const preferredColumns = buildPreferredColumns(nextManualColumns, nextTables);
 
       setExtraSections(nextExtraSections);
+      setSectionOrder(nextSectionOrder);
+      sectionOrderRef.current = nextSectionOrder;
       setTables(nextTables);
       setManualColumns(nextManualColumns);
       setActiveCell(null);
       setActiveSection('useCases');
-      await persistTables(nextTables, preferredColumns, nextExtraSections);
+      await persistTables(nextTables, preferredColumns, nextExtraSections, nextSectionOrder);
       return;
     }
 
@@ -763,18 +1021,7 @@ export default function ModuleSpecifications({
     };
   };
 
-  const buildLayoutPayload = (nextTables, preferredColumns, nextExtraSections) => ({
-    columnWidths: sanitizeSizeMap(columnWidths, { min: 120, max: 520 }),
-    rowHeights: sanitizeSizeMap(rowHeights, { min: 48, max: 260 }),
-    extraSections: (nextExtraSections || []).map(section => ({
-      key: section.key,
-      label: section.label,
-      rows: nextTables[section.key] || [],
-      columns: preferredColumns[section.key] || [],
-    })),
-  });
-
-  const persistTables = async (nextTables, preferredColumns, nextExtraSections = extraSections) => {
+  const persistTables = async (nextTables, preferredColumns, nextExtraSections = extraSections, nextSectionOrder = sectionOrder, snapshotToken = '') => {
     if (!isAdmin) return;
 
     setIsSaving(true);
@@ -785,7 +1032,7 @@ export default function ModuleSpecifications({
         useCases: nextTables.useCases,
         workflows: nextTables.workflows,
         businessRules: nextTables.businessRules,
-        layout: buildLayoutPayload(nextTables, preferredColumns, nextExtraSections),
+        layout: buildLayoutPayload(nextTables, preferredColumns, nextExtraSections, nextSectionOrder),
       });
 
       const useCasesNorm = normalizeSectionForSave(saved.useCases, preferredColumns.useCases);
@@ -822,15 +1069,40 @@ export default function ModuleSpecifications({
         nextExtraMeta.push({ key: section.key, label: section.label });
       });
 
+      const validOrderKeys = [...DEFAULT_SECTION_ORDER, ...nextExtraMeta.map(section => section.key)];
+      const effectiveSectionOrder = normalizeSectionOrder(nextSectionOrder, validOrderKeys);
+
+      const mergedSavedLayout = {
+        ...savedLayout,
+        sectionOrder: effectiveSectionOrder,
+        sectionColumns: Object.fromEntries(
+          Object.keys(normalizedSaved).map(sectionKey => [sectionKey, normalizedManualColumns[sectionKey] || []]),
+        ),
+      };
+
+      const persistedSnapshot = snapshotToken || buildSnapshot(
+        normalizedSaved,
+        normalizedManualColumns,
+        nextExtraMeta,
+        effectiveSectionOrder,
+        savedLayout.columnWidths,
+        savedLayout.rowHeights,
+      );
+      lastPersistedSnapshotRef.current = persistedSnapshot;
+
       setTables(normalizedSaved);
       setManualColumns(normalizedManualColumns);
       setExtraSections(nextExtraMeta);
+      setSectionOrder(effectiveSectionOrder);
+      sectionOrderRef.current = effectiveSectionOrder;
       setColumnWidths(savedLayout.columnWidths);
       setRowHeights(savedLayout.rowHeights);
-      onSaved?.({ ...normalizedSaved, layout: savedLayout });
+      onSaved?.({ ...normalizedSaved, layout: mergedSavedLayout });
       setSaveJustNow(true);
+      return true;
     } catch (err) {
       alert(err?.response?.data?.error || err?.message || 'Failed to save module specifications.');
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -842,23 +1114,70 @@ export default function ModuleSpecifications({
     await persistTables(tables, preferredColumns);
   };
 
+  const handleTabDragStart = (sectionKey, event) => {
+    if (!isAdmin) return;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', sectionKey);
+    setDraggedSectionKey(sectionKey);
+  };
+
+  const handleTabDragEnter = (targetKey) => {
+    if (!isAdmin || !draggedSectionKey || draggedSectionKey === targetKey) return;
+
+    const fromIndex = sectionTabs.findIndex(section => section.key === draggedSectionKey);
+    const toIndex = sectionTabs.findIndex(section => section.key === targetKey);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const reordered = [...sectionTabs];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    const nextSectionOrder = reordered.map(section => section.key);
+    setSectionOrder(nextSectionOrder);
+    sectionOrderRef.current = nextSectionOrder;
+  };
+
+  const handleTabDrop = (event) => {
+    if (!isAdmin) return;
+    event.preventDefault();
+  };
+
+  const handleTabDragEnd = async () => {
+    if (!isAdmin) return;
+    const nextSectionOrder = [...sectionOrderRef.current];
+    setDraggedSectionKey('');
+
+    const preferredColumns = buildPreferredColumns(columnsBySection, tables);
+    await persistTables(tables, preferredColumns, extraSections, nextSectionOrder);
+  };
+
   const rootHeightClass = 'h-full';
+  const showManualControls = isAdmin && !(drawerMode && autoSave);
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden ${rootHeightClass} ${drawerMode ? 'rounded-none border-0 border-l' : ''}`}>
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex flex-col gap-3">
+        <div className="flex items-center gap-2 min-w-0 w-full overflow-x-auto whitespace-nowrap pb-1">
           {sectionTabs.map((section) => (
             <button
               key={section.key}
               type="button"
+              draggable={isAdmin}
               onClick={() => setActiveSection(section.key)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${activeSection === section.key ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'}`}
+              onDragStart={(event) => handleTabDragStart(section.key, event)}
+              onDragOver={(event) => {
+                if (!isAdmin) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+              }}
+              onDragEnter={() => handleTabDragEnter(section.key)}
+              onDrop={handleTabDrop}
+              onDragEnd={handleTabDragEnd}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${activeSection === section.key ? 'bg-indigo-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'} ${isAdmin ? 'cursor-move' : ''} ${draggedSectionKey === section.key ? 'opacity-70' : ''}`}
             >
               {section.label}
             </button>
           ))}
-          {isAdmin && (
+          {showManualControls && (
             <button
               type="button"
               onClick={openAddSectionDialog}
@@ -870,7 +1189,7 @@ export default function ModuleSpecifications({
           )}
         </div>
 
-        {isAdmin && (
+        {showManualControls && (
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 cursor-pointer hover:bg-gray-50">
@@ -978,7 +1297,7 @@ export default function ModuleSpecifications({
           </div>
         ) : (
           <div ref={tableScrollRef} className="h-full overflow-auto border border-gray-200 rounded-xl bg-white">
-            <table className="w-full border-collapse text-sm">
+            <table className="min-w-max border-collapse text-sm">
               <thead>
                 <tr>
                   {currentColumns.map(col => (

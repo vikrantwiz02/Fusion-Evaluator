@@ -272,7 +272,7 @@ export default async function handler(req, res) {
         businessRules: Array.isArray(mod.spec_rules) ? mod.spec_rules : [],
         layout: mod.spec_layout && typeof mod.spec_layout === 'object' && !Array.isArray(mod.spec_layout)
           ? mod.spec_layout
-          : { columnWidths: {}, rowHeights: {}, extraSections: [] },
+          : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} },
       });
     }
 
@@ -292,7 +292,7 @@ export default async function handler(req, res) {
       mod.spec_rules = normalizeSpecRows(req.body?.businessRules);
       mod.spec_layout = (req.body?.layout && typeof req.body.layout === 'object' && !Array.isArray(req.body.layout))
         ? req.body.layout
-        : { columnWidths: {}, rowHeights: {}, extraSections: [] };
+        : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} };
 
       await mod.save();
       return res.status(200).json({
@@ -302,7 +302,7 @@ export default async function handler(req, res) {
         businessRules: Array.isArray(mod.spec_rules) ? mod.spec_rules : [],
         layout: mod.spec_layout && typeof mod.spec_layout === 'object' && !Array.isArray(mod.spec_layout)
           ? mod.spec_layout
-          : { columnWidths: {}, rowHeights: {}, extraSections: [] },
+          : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} },
       });
     }
 

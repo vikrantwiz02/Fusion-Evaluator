@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   fetchModuleDetails,
   updateEvaluation,
@@ -175,7 +175,12 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const [dragOverZone, setDragOverZone] = useState(null);
   const [primaryView, setPrimaryView] = useState('evaluation');
   const [sideBySide, setSideBySide] = useState(false);
+  const [specAutoSaveStatus, setSpecAutoSaveStatus] = useState('idle');
   const sidebarCollapsed = primaryView === 'evaluation' && sideBySide;
+
+  const handleSpecAutoSaveStatus = useCallback((status) => {
+    setSpecAutoSaveStatus(status || 'idle');
+  }, []);
 
   const toggleSideBySide = () => {
     setSideBySide(prev => !prev);
@@ -662,6 +667,8 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                 isAdmin={isAdmin}
                 initialData={moduleSpecificationsData}
                 onSaved={handleSpecificationsSaved}
+                onAutoSaveStatusChange={handleSpecAutoSaveStatus}
+                autoSave={isAdmin}
               />
             </div>
           ) : (
@@ -830,20 +837,29 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                 <div className="h-full p-4">
                   <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-800">Module Specifications (View Only)</h3>
-                      <button
-                        onClick={() => setSideBySide(false)}
-                        className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
-                      >
-                        Collapse
-                      </button>
+                      <h3 className="text-sm font-semibold text-gray-800">Module Specifications (Editable)</h3>
+                      <div className="flex items-center gap-2">
+                        {isAdmin && (
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${specAutoSaveStatus === 'saving' ? 'bg-amber-50 text-amber-700 border-amber-200' : specAutoSaveStatus === 'saved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                            {specAutoSaveStatus === 'saving' ? 'Auto-saving...' : specAutoSaveStatus === 'saved' ? 'Auto-saved' : 'Auto-save on'}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => setSideBySide(false)}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+                        >
+                          Collapse
+                        </button>
+                      </div>
                     </div>
                     <div className="flex-1 overflow-hidden">
                       <ModuleSpecifications
                         moduleId={moduleId}
-                        isAdmin={false}
+                        isAdmin={isAdmin}
                         initialData={moduleSpecificationsData}
                         onSaved={handleSpecificationsSaved}
+                        onAutoSaveStatusChange={handleSpecAutoSaveStatus}
+                        autoSave={isAdmin}
                         drawerMode
                       />
                     </div>
