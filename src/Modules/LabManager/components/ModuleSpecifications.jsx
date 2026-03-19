@@ -702,21 +702,31 @@ export default function ModuleSpecifications({
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { type: 'array' });
       const rawSections = resolveWorkbookSections(workbook);
-      const sections = {
-        useCases: withAutoSerial(rawSections.useCases),
-        workflows: withAutoSerial(rawSections.workflows),
-        businessRules: withAutoSerial(rawSections.businessRules),
-      };
-      setTables(sections);
-      setManualColumns({
-        useCases: collectColumns(sections.useCases),
-        workflows: collectColumns(sections.workflows),
-        businessRules: collectColumns(sections.businessRules),
-      });
-      setExtraSections([]);
-      setSectionOrder(DEFAULT_SECTION_ORDER);
-      sectionOrderRef.current = DEFAULT_SECTION_ORDER;
-      setActiveSection('useCases');
+
+      // Upload should only affect the currently selected tab.
+      let targetRows = Array.isArray(rawSections[activeSection]) ? rawSections[activeSection] : [];
+
+      // For custom sections or unmatched sheet names, fall back to first non-empty sheet.
+      if (targetRows.length === 0) {
+        const firstNonEmptySheet = (workbook.SheetNames || []).find((name) => {
+          const rows = extractRowsFromSheet(workbook.Sheets[name]);
+          return rows.length > 0;
+        });
+        targetRows = extractRowsFromSheet(firstNonEmptySheet ? workbook.Sheets[firstNonEmptySheet] : null);
+      }
+
+      const normalizedRows = withAutoSerial(targetRows);
+      const uploadedColumns = collectColumns(normalizedRows);
+
+      setTables(prev => ({
+        ...prev,
+        [activeSection]: normalizedRows,
+      }));
+      setManualColumns(prev => ({
+        ...prev,
+        [activeSection]: uploadedColumns,
+      }));
+      setActiveCell(null);
     } catch {
       alert('Unable to read Excel file. Please upload a valid workbook.');
     } finally {
