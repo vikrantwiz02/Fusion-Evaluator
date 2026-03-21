@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   fetchModuleDetails,
   updateEvaluation,
@@ -9,6 +9,7 @@ import {
   createDivision,
   updateDivision,
   deleteDivision,
+  saveModuleSpecifications,
 } from './api';
 import FileChecklist from './components/FileChecklist';
 import EditableList from './components/EditableList';
@@ -18,7 +19,7 @@ import FeatureList from './components/FeatureList';
 import ModuleSpecifications from './components/ModuleSpecifications';
 import {
   ArrowLeft, Plus, Trash2, Code2, Link as LinkIcon, CheckCircle2, XCircle,
-  Copy, Server, Layout, Edit2, Search, FolderOpen, ChevronDown, ChevronRight,
+  Copy, Server, Layout, Edit2, Search, FolderOpen, ChevronDown, ChevronRight, Upload, Download,
 } from 'lucide-react';
 
 // ── Sidebar helpers ────────────────────────────────────────────────────────────
@@ -176,7 +177,18 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const [primaryView, setPrimaryView] = useState('evaluation');
   const [sideBySide, setSideBySide] = useState(false);
   const [specAutoSaveStatus, setSpecAutoSaveStatus] = useState('idle');
+  const [toast, setToast] = useState({ open: false, type: 'info', message: '' });
+  const specsUploadInputRef = useRef(null);
+  const toastTimerRef = useRef(null);
   const sidebarCollapsed = primaryView === 'evaluation' && sideBySide;
+
+  const showToast = useCallback((type, message) => {
+    setToast({ open: true, type, message });
+    window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(prev => ({ ...prev, open: false }));
+    }, 2600);
+  }, []);
 
   const handleSpecAutoSaveStatus = useCallback((status) => {
     setSpecAutoSaveStatus(status || 'idle');
@@ -184,6 +196,106 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
 
   const toggleSideBySide = () => {
     setSideBySide(prev => !prev);
+  };
+
+  const triggerSpecsZipUpload = () => {
+    if (!isAdmin) return;
+    specsUploadInputRef.current?.click();
+  };
+
+  const handleSpecsZipUpload = async (event) => {
+    if (!isAdmin) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      showToast('error', 'Only .zip files are allowed for Module Specs upload.');
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Unable to read file'));
+        reader.readAsDataURL(file);
+      });
+
+      const nextZip = {
+        name: file.name,
+        type: file.type || 'application/zip',
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        dataUrl,
+      };
+
+      // Optimistically keep zip metadata available for immediate download clicks.
+      setModuleData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          spec_layout: {
+            ...(prev.spec_layout && typeof prev.spec_layout === 'object' && !Array.isArray(prev.spec_layout) ? prev.spec_layout : {}),
+            moduleSpecsZip: nextZip,
+          },
+        };
+      });
+
+      const saved = await saveModuleSpecifications(moduleId, {
+        useCases: moduleSpecificationsData.useCases,
+        workflows: moduleSpecificationsData.workflows,
+        businessRules: moduleSpecificationsData.businessRules,
+        layout: {
+          ...(moduleSpecificationsData.layout || {}),
+          moduleSpecsZip: nextZip,
+        },
+      });
+
+      handleSpecificationsSaved(saved);
+
+      // Refresh from server to ensure the zip was persisted in backend state.
+      await loadData({ silent: true });
+      showToast('success', `Module Specs zip uploaded: ${nextZip.name}`);
+    } catch {
+      showToast('error', 'Failed to upload Module Specs zip.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleSpecsZipDownload = async () => {
+    try {
+      let zip = moduleData?.spec_layout?.moduleSpecsZip;
+
+      // If local state is stale, fetch latest module details once before failing.
+      if (!zip?.dataUrl || !zip?.name) {
+        try {
+          const fresh = await fetchModuleDetails(moduleId);
+          zip = fresh?.spec_layout?.moduleSpecsZip;
+          if (zip?.dataUrl && zip?.name) {
+            setModuleData(prev => prev ? { ...prev, spec_layout: fresh.spec_layout || {} } : prev);
+          }
+        } catch {
+          // Fall through to user-facing error below.
+        }
+      }
+
+      if (!zip?.dataUrl || !zip?.name) {
+        showToast('error', 'No Module Specs zip found. Upload one first.');
+        return;
+      }
+
+      const link = document.createElement('a');
+      link.href = zip.dataUrl;
+      link.download = zip.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('success', `Downloaded: ${zip.name}`);
+    } catch {
+      showToast('error', 'Failed to download Module Specs zip.');
+    }
   };
 
   // ── Data loading ─────────────────────────────────────────────────────────────
@@ -328,8 +440,14 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       await createDivision(moduleId, { name: formData.name });
       setAddDivisionModalOpen(false);
       await loadData({ silent: true });
+      showToast('success', 'Division created successfully.');
     } catch (err) {
-      alert(err.message || 'Failed to create division.');
+      const apiError = String(err?.response?.data?.error || err?.message || '').toLowerCase();
+      if (apiError.includes('already') || apiError.includes('exists') || apiError.includes('duplicate')) {
+        showToast('error', 'Division name already exists. Please use a different name.');
+      } else {
+        showToast('error', err?.response?.data?.error || err?.message || 'Failed to create division.');
+      }
     }
   };
 
@@ -473,6 +591,24 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       : {},
   }), [moduleData]);
 
+  const specsZipMetaText = useMemo(() => {
+    const zip = moduleData?.spec_layout?.moduleSpecsZip;
+    if (!zip?.name) return 'No Module Specs zip uploaded yet.';
+
+    const uploadedAt = zip.uploadedAt ? new Date(zip.uploadedAt) : null;
+    const when = uploadedAt && !Number.isNaN(uploadedAt.getTime())
+      ? uploadedAt.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+      : 'unknown time';
+
+    return `Stored zip: ${zip.name} (${when})`;
+  }, [moduleData?.spec_layout?.moduleSpecsZip]);
+
   const handleSpecificationsSaved = (saved) => {
     setModuleData(prev => {
       if (!prev) return prev;
@@ -498,6 +634,20 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-gray-50">
+      {toast.open && (
+        <div className="fixed top-20 inset-x-0 z-[80] flex justify-center pointer-events-none px-4">
+          <div className={`pointer-events-auto w-full max-w-md px-4 py-3 rounded-2xl border shadow-xl backdrop-blur-sm text-sm font-medium flex items-start gap-2 ${toast.type === 'success' ? 'bg-emerald-50/95 text-emerald-700 border-emerald-200' : toast.type === 'error' ? 'bg-red-50/95 text-red-700 border-red-200' : 'bg-blue-50/95 text-blue-700 border-blue-200'}`}>
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            ) : toast.type === 'error' ? (
+              <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-gray-200 px-6 py-4 shrink-0">
@@ -527,12 +677,27 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
               )}
 
               {isAdmin && (
-                <button
-                  onClick={() => setAddDivisionModalOpen(true)}
-                  className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
-                >
-                  <FolderOpen className="w-4 h-4 mr-1.5" /> Add Division
-                </button>
+                <>
+                  <button
+                    onClick={triggerSpecsZipUpload}
+                    className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
+                  >
+                    <Upload className="w-4 h-4 mr-1.5" /> Module Specs
+                  </button>
+                  <input
+                    ref={specsUploadInputRef}
+                    type="file"
+                    accept=".zip,application/zip"
+                    className="hidden"
+                    onChange={handleSpecsZipUpload}
+                  />
+                  <button
+                    onClick={() => setAddDivisionModalOpen(true)}
+                    className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
+                  >
+                    <FolderOpen className="w-4 h-4 mr-1.5" /> Add Division
+                  </button>
+                </>
               )}
               <button
                 onClick={() => openAddPairModal(null)}
@@ -543,6 +708,12 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
             </div>
 
             <div className="inline-flex items-center rounded-2xl border border-slate-200 bg-slate-100 p-1.5 shadow-inner">
+              <button
+                onClick={handleSpecsZipDownload}
+                className="px-3 py-2 rounded-xl text-sm font-semibold transition-all text-slate-600 hover:text-slate-800 hover:bg-white/70"
+              >
+                <span className="inline-flex items-center"><Download className="w-4 h-4 mr-1.5" /> Module Specs</span>
+              </button>
               <button
                 onClick={() => setPrimaryView('specifications')}
                 className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${primaryView === 'specifications' ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/70'}`}
@@ -556,6 +727,10 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                 Evaluation View
               </button>
             </div>
+
+            <p className="text-xs text-gray-500 max-w-[520px] text-right truncate" title={specsZipMetaText}>
+              {specsZipMetaText}
+            </p>
           </div>
         </div>
       </header>
