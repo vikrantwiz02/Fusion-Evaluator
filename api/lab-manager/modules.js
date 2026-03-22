@@ -21,14 +21,20 @@ const mongooseReady = mongoose.connection.readyState === 1
       socketTimeoutMS: 45000,
     });
 
-function normalizeAssignedLeads(payload) {
+function normalizeAssignments(payload) {
   const assignedLeads = Array.isArray(payload.assigned_leads)
     ? payload.assigned_leads
+    : [];
+  const assignedTeams = Array.isArray(payload.assigned_teams)
+    ? payload.assigned_teams
     : [];
 
   return {
     ...payload,
     assigned_leads: assignedLeads
+      .map(email => String(email).trim().toLowerCase())
+      .filter(Boolean),
+    assigned_teams: assignedTeams
       .map(email => String(email).trim().toLowerCase())
       .filter(Boolean),
   };
@@ -57,12 +63,26 @@ export default async function handler(req, res) {
     // GET /api/lab-manager/modules
     if (req.method === 'GET') {
       const actor = getRequestActor(req);
-      const query = actor.role === 'lead'
-        ? { assigned_leads: { $in: [actor.email] } }
-        : {};
+      const scope = String(req.query?.scope || 'lead').trim().toLowerCase();
+      let query = {};
 
-      if (actor.role === 'lead' && !actor.email) {
-        return res.status(403).json({ error: 'Lead email is required' });
+      if (actor.role !== 'admin') {
+        if (scope === 'teams') {
+          query = { assigned_teams: { $in: [actor.email] } };
+        } else if (scope === 'both') {
+          query = {
+            $or: [
+              { assigned_leads: { $in: [actor.email] } },
+              { assigned_teams: { $in: [actor.email] } },
+            ],
+          };
+        } else {
+          query = { assigned_leads: { $in: [actor.email] } };
+        }
+      }
+
+      if (actor.role !== 'admin' && !actor.email) {
+        return res.status(403).json({ error: 'User email is required' });
       }
 
       const modules = await Module.find(query).sort({ createdAt: 1 }).lean();
@@ -72,7 +92,7 @@ export default async function handler(req, res) {
 
     // POST /api/lab-manager/modules
     if (req.method === 'POST') {
-      const mod = new Module(normalizeAssignedLeads(req.body));
+      const mod = new Module(normalizeAssignments(req.body));
       await mod.save();
       const serialized = serializeModule(mod);
       if (!serialized) {

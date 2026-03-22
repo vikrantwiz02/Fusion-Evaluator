@@ -152,6 +152,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       });
 
   const isAdmin = user?.role === 'admin';
+  const canEditSpecifications = isAdmin || user?.role === 'lead';
 
   const [moduleData, setModuleData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -180,7 +181,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const [toast, setToast] = useState({ open: false, type: 'info', message: '' });
   const specsUploadInputRef = useRef(null);
   const toastTimerRef = useRef(null);
-  const sidebarCollapsed = primaryView === 'evaluation' && sideBySide;
+  const sidebarCollapsed = primaryView === 'specifications' || (primaryView === 'evaluation' && sideBySide);
 
   const showToast = useCallback((type, message) => {
     setToast({ open: true, type, message });
@@ -198,13 +199,23 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     setSideBySide(prev => !prev);
   };
 
+  const openSpecificationsView = () => {
+    setPrimaryView('specifications');
+  };
+
+  const openEvaluationView = () => {
+    // Evaluation tab should show sidebar by default; user can still hide it using Side-by-Side.
+    setPrimaryView('evaluation');
+    setSideBySide(false);
+  };
+
   const triggerSpecsZipUpload = () => {
-    if (!isAdmin) return;
+    if (!canEditSpecifications) return;
     specsUploadInputRef.current?.click();
   };
 
   const handleSpecsZipUpload = async (event) => {
-    if (!isAdmin) return;
+    if (!canEditSpecifications) return;
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -339,7 +350,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     try {
       await updateEvaluation(moduleId, groupId, newEval);
     } catch (err) {
-      alert('Failed to save: ' + (err.message || 'Unknown error'));
+      showToast('error', 'Failed to save: ' + (err.message || 'Unknown error'));
       await loadData({ silent: true });
     }
   };
@@ -360,7 +371,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       });
       await loadData({ silent: true });
     } catch (err) {
-      alert(err.message || 'Failed to update roll numbers.');
+      showToast('error', err.message || 'Failed to update roll numbers.');
     }
   };
 
@@ -384,7 +395,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       await loadData({ silent: true });
       if (newGroup?.id) setSelectedGroupId(newGroup.id);
     } catch (err) {
-      alert(err.message || 'Failed to add pair.');
+      showToast('error', err.message || 'Failed to add pair.');
     }
   };
 
@@ -403,7 +414,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       setGroupToEdit(null);
       loadData({ silent: true });
     } catch (err) {
-      alert(err.message || 'Failed to update pair.');
+      showToast('error', err.message || 'Failed to update pair.');
     }
   };
 
@@ -415,7 +426,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       await deleteGroup(moduleId, groupToDelete);
       if (selectedGroupId === groupToDelete) setSelectedGroupId(null);
     } catch (err) {
-      alert(err.message || 'Failed to delete pair.');
+      showToast('error', err.message || 'Failed to delete pair.');
     } finally {
       setDeleteConfirmOpen(false);
       setGroupToDelete(null);
@@ -429,7 +440,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       await loadData({ silent: true });
       if (newGroup?.id) setSelectedGroupId(newGroup.id);
     } catch (err) {
-      alert(err.message || 'Failed to duplicate pair.');
+      showToast('error', err.message || 'Failed to duplicate pair.');
     }
   };
 
@@ -464,7 +475,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       setDivisionToEdit(null);
       await loadData({ silent: true });
     } catch (err) {
-      alert(err.message || 'Failed to rename division.');
+      showToast('error', err.message || 'Failed to rename division.');
     }
   };
 
@@ -478,7 +489,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     try {
       await deleteDivision(moduleId, divisionToDelete.id);
     } catch (err) {
-      alert(err.message || 'Failed to delete division.');
+      showToast('error', err.message || 'Failed to delete division.');
     } finally {
       setDeleteDivisionConfirmOpen(false);
       setDivisionToDelete(null);
@@ -520,7 +531,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       await updateGroup(moduleId, draggedGroupId, { division_id: nextDivisionId });
     } catch (err) {
       await loadData({ silent: true });
-      alert(err.message || 'Failed to move pair to selected division.');
+      showToast('error', err.message || 'Failed to move pair to selected division.');
     } finally {
       handlePairDragEnd();
     }
@@ -676,7 +687,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                 </div>
               )}
 
-              {isAdmin && (
+              {canEditSpecifications && (
                 <>
                   <button
                     onClick={triggerSpecsZipUpload}
@@ -691,13 +702,15 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                     className="hidden"
                     onChange={handleSpecsZipUpload}
                   />
-                  <button
-                    onClick={() => setAddDivisionModalOpen(true)}
-                    className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
-                  >
-                    <FolderOpen className="w-4 h-4 mr-1.5" /> Add Division
-                  </button>
                 </>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => setAddDivisionModalOpen(true)}
+                  className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
+                >
+                  <FolderOpen className="w-4 h-4 mr-1.5" /> Add Division
+                </button>
               )}
               <button
                 onClick={() => openAddPairModal(null)}
@@ -715,13 +728,13 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                 <span className="inline-flex items-center"><Download className="w-4 h-4 mr-1.5" /> Module Specs</span>
               </button>
               <button
-                onClick={() => setPrimaryView('specifications')}
+                onClick={openSpecificationsView}
                 className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${primaryView === 'specifications' ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/70'}`}
               >
                 Module Specifications
               </button>
               <button
-                onClick={() => setPrimaryView('evaluation')}
+                onClick={openEvaluationView}
                 className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${primaryView === 'evaluation' ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/70'}`}
               >
                 Evaluation View
@@ -836,14 +849,14 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         <div className={`flex-1 bg-gray-50 p-6 relative min-h-0 ${primaryView === 'evaluation' && !sideBySide ? 'overflow-y-auto' : 'overflow-hidden'}`}>
 
           {primaryView === 'specifications' ? (
-            <div className="max-w-5xl mx-auto h-full min-h-0">
+            <div className="w-full h-full min-h-0">
               <ModuleSpecifications
                 moduleId={moduleId}
-                isAdmin={isAdmin}
+                isAdmin={canEditSpecifications}
                 initialData={moduleSpecificationsData}
                 onSaved={handleSpecificationsSaved}
                 onAutoSaveStatusChange={handleSpecAutoSaveStatus}
-                autoSave={isAdmin}
+                autoSave={canEditSpecifications}
               />
             </div>
           ) : (
@@ -1014,7 +1027,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                     <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-gray-800">Module Specifications (Editable)</h3>
                       <div className="flex items-center gap-2">
-                        {isAdmin && (
+                        {canEditSpecifications && (
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${specAutoSaveStatus === 'saving' ? 'bg-amber-50 text-amber-700 border-amber-200' : specAutoSaveStatus === 'saved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
                             {specAutoSaveStatus === 'saving' ? 'Auto-saving...' : specAutoSaveStatus === 'saved' ? 'Auto-saved' : 'Auto-save on'}
                           </span>
@@ -1030,11 +1043,11 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                     <div className="flex-1 overflow-hidden">
                       <ModuleSpecifications
                         moduleId={moduleId}
-                        isAdmin={isAdmin}
+                        isAdmin={canEditSpecifications}
                         initialData={moduleSpecificationsData}
                         onSaved={handleSpecificationsSaved}
                         onAutoSaveStatusChange={handleSpecAutoSaveStatus}
-                        autoSave={isAdmin}
+                        autoSave={canEditSpecifications}
                         drawerMode
                       />
                     </div>

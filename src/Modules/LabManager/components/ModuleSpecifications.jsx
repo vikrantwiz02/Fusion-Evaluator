@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Bold, Italic, Underline as UnderlineIcon, Upload, Save, Plus, FileSpreadsheet, Columns3, Trash2 } from 'lucide-react';
 import { saveModuleSpecifications } from '../api';
+import { notifyError, notifyWarning } from '../../../lib/notify';
 
 const BASE_SECTIONS = [
   { key: 'useCases', label: 'Use Cases' },
@@ -316,13 +317,15 @@ export default function ModuleSpecifications({
   onAutoSaveStatusChange,
   drawerMode = false,
   autoSave = false,
+  saveSpecifications = saveModuleSpecifications,
+  storageKeyPrefix = 'module-spec',
 }) {
   const [activeSection, setActiveSection] = useState(initialSection);
   const initialSections = useMemo(() => normalizeInitialSections(initialData), [initialData]);
   const initialLayout = useMemo(() => normalizeLayout(initialData?.layout), [initialData]);
   const [extraSections, setExtraSections] = useState(initialLayout.extraSections.map(({ key, label }) => ({ key, label })));
-  const sectionOrderStorageKey = useMemo(() => `module-spec-section-order:${moduleId}`, [moduleId]);
-  const sectionColumnsStorageKey = useMemo(() => `module-spec-section-columns:${moduleId}`, [moduleId]);
+  const sectionOrderStorageKey = useMemo(() => `${storageKeyPrefix}-section-order:${moduleId}`, [storageKeyPrefix, moduleId]);
+  const sectionColumnsStorageKey = useMemo(() => `${storageKeyPrefix}-section-columns:${moduleId}`, [storageKeyPrefix, moduleId]);
   const [sectionOrder, setSectionOrder] = useState(initialLayout.sectionOrder);
   const [moduleSpecsZip, setModuleSpecsZip] = useState(initialLayout.moduleSpecsZip || null);
   const [tables, setTables] = useState({
@@ -732,7 +735,7 @@ export default function ModuleSpecifications({
       }));
       setActiveCell(null);
     } catch {
-      alert('Unable to read Excel file. Please upload a valid workbook.');
+      notifyError('Unable to read Excel file. Please upload a valid workbook.');
     } finally {
       event.target.value = '';
     }
@@ -970,7 +973,7 @@ export default function ModuleSpecifications({
 
     if (headerDialog.mode === 'add') {
       if (currentColumns.includes(value)) {
-        alert('Header already exists.');
+        notifyWarning('Header already exists.');
         return;
       }
 
@@ -1002,7 +1005,7 @@ export default function ModuleSpecifications({
         return;
       }
       if (currentColumns.includes(value)) {
-        alert('A header with this name already exists.');
+        notifyWarning('A header with this name already exists.');
         return;
       }
 
@@ -1042,7 +1045,7 @@ export default function ModuleSpecifications({
     setSaveJustNow(false);
 
     try {
-      const saved = await saveModuleSpecifications(moduleId, {
+      const saved = await saveSpecifications(moduleId, {
         useCases: nextTables.useCases,
         workflows: nextTables.workflows,
         businessRules: nextTables.businessRules,
@@ -1117,7 +1120,7 @@ export default function ModuleSpecifications({
       setSaveJustNow(true);
       return true;
     } catch (err) {
-      alert(err?.response?.data?.error || err?.message || 'Failed to save module specifications.');
+      notifyError(err?.response?.data?.error || err?.message || 'Failed to save module specifications.');
       return false;
     } finally {
       setIsSaving(false);

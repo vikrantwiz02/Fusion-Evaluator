@@ -2,22 +2,59 @@ import React, { useState, useEffect } from 'react';
 import { fetchAllModules } from './api';
 import { ChevronRight, Clock, Calendar } from 'lucide-react';
 
-export default function LeadModulesList({ modules, onSelectModule }) {
+export default function LeadModulesList({ modules, onSelectModule, viewType = 'lead' }) {
   const [liveModules, setLiveModules] = useState(() => (Array.isArray(modules) ? modules : []));
 
   useEffect(() => {
     // Render immediately from login payload to avoid initial blank state.
     setLiveModules(Array.isArray(modules) ? modules : []);
 
-    // Fetch fresh, server-authorized module list for this lead.
-    fetchAllModules()
-      .then(fresh => {
-        setLiveModules(Array.isArray(fresh) ? fresh : []);
-      })
-      .catch(() => {
-        // Keep already rendered data on refresh failures.
-      });
-  }, [modules]);
+    const scope = viewType === 'teams' ? 'teams' : 'lead';
+    let disposed = false;
+
+    const refresh = async () => {
+      try {
+        const fresh = await fetchAllModules(scope);
+        if (!disposed) {
+          setLiveModules(Array.isArray(fresh) ? fresh : []);
+        }
+      } catch {
+        // If refresh fails, avoid showing stale cards that may now be unauthorized.
+        if (!disposed) {
+          setLiveModules([]);
+        }
+      }
+    };
+
+    refresh();
+
+    // Keep list in sync with admin updates (assignment/timer changes) without manual refresh.
+    const intervalId = window.setInterval(refresh, 15000);
+    const handleFocus = () => {
+      refresh();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [modules, viewType]);
+
+  const resolveAccessWindow = (mod) => {
+    if (viewType === 'teams') {
+      return {
+        start: mod?.team_access_start ?? null,
+        end: mod?.team_access_end ?? null,
+      };
+    }
+    return {
+      start: mod?.access_start ?? null,
+      end: mod?.access_end ?? null,
+    };
+  };
 
   const checkTimeAccess = (accessStart, accessEnd) => {
     if (accessStart == null && accessEnd == null) return true;
@@ -40,7 +77,8 @@ export default function LeadModulesList({ modules, onSelectModule }) {
       
       <div className="space-y-4">
         {liveModules.map(mod => {
-          const hasAccess = checkTimeAccess(mod.access_start, mod.access_end);
+          const accessWindow = resolveAccessWindow(mod);
+          const hasAccess = checkTimeAccess(accessWindow.start, accessWindow.end);
           
           return (
             <div 
@@ -62,7 +100,7 @@ export default function LeadModulesList({ modules, onSelectModule }) {
 
                     <div className="flex items-center">
                       <Clock className="w-4 h-4 mr-1.5" />
-                      Access Window: {formatAccessWindow(mod.access_start, mod.access_end)}
+                      Access Window: {formatAccessWindow(accessWindow.start, accessWindow.end)}
                     </div>
                   </div>
                 </div>

@@ -25,6 +25,7 @@ import {
 import ConfirmModal from './components/ConfirmModal';
 import MasterLeadsData from './MasterLeadsData';
 import { NavLink } from 'react-router-dom';
+import { notifyError, notifyInfo, notifySuccess } from '../../lib/notify';
 
 // ── Timer helpers ──────────────────────────────────────────────────────────────
 
@@ -89,8 +90,11 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
   const [formData, setFormData] = useState({
     name: '',
     assigned_leads: '',
+    assigned_teams: '',
     access_start: '',
     access_end: '',
+    team_access_start: '',
+    team_access_end: '',
     date: getTodayDate(),
     has_backend: true,
     has_frontend: true,
@@ -103,7 +107,8 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
   // Bulk timer
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [timerModalOpen, setTimerModalOpen] = useState(false);
-  const [timerForm, setTimerForm] = useState({ access_start: '', access_end: '' });
+  const [clearTimerConfirmOpen, setClearTimerConfirmOpen] = useState(false);
+  const [timerForm, setTimerForm] = useState({ access_start: '', access_end: '', applyForLeads: true, applyForTeams: true });
   const [timerSaving, setTimerSaving] = useState(false);
 
   // ── Data loading ───────────────────────────────────────────────────────────
@@ -142,8 +147,11 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
       setFormData({
         name: mod.name,
         assigned_leads: mod.assigned_leads.join(', '),
+        assigned_teams: Array.isArray(mod.assigned_teams) ? mod.assigned_teams.join(', ') : '',
         access_start: toDatetimeLocal(mod.access_start),
         access_end: toDatetimeLocal(mod.access_end),
+        team_access_start: toDatetimeLocal(mod.team_access_start),
+        team_access_end: toDatetimeLocal(mod.team_access_end),
         date: mod.date || getTodayDate(),
         has_backend: mod.has_backend !== false,
         has_frontend: mod.has_frontend !== false,
@@ -153,8 +161,11 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
       setFormData({
         name: '',
         assigned_leads: '',
+        assigned_teams: '',
         access_start: '',
         access_end: '',
+        team_access_start: '',
+        team_access_end: '',
         date: getTodayDate(),
         has_backend: true,
         has_frontend: true,
@@ -167,16 +178,25 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
     e.preventDefault();
     const accessStart = fromDatetimeLocal(formData.access_start);
     const accessEnd = fromDatetimeLocal(formData.access_end);
+    const teamAccessStart = fromDatetimeLocal(formData.team_access_start);
+    const teamAccessEnd = fromDatetimeLocal(formData.team_access_end);
     if (accessStart && accessEnd && new Date(accessStart) >= new Date(accessEnd)) {
-      alert('Access end must be after access start.');
+      notifyError('Access end must be after access start.');
+      return;
+    }
+    if (teamAccessStart && teamAccessEnd && new Date(teamAccessStart) >= new Date(teamAccessEnd)) {
+      notifyError('Teams access end must be after teams access start.');
       return;
     }
 
     const payload = {
       name: formData.name,
       assigned_leads: formData.assigned_leads.split(',').map(s => s.trim()).filter(Boolean),
+      assigned_teams: formData.assigned_teams.split(',').map(s => s.trim()).filter(Boolean),
       access_start: accessStart,
       access_end: accessEnd,
+      team_access_start: teamAccessStart,
+      team_access_end: teamAccessEnd,
       date: formData.date,
       has_backend: formData.has_backend,
       has_frontend: formData.has_frontend,
@@ -189,9 +209,10 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
         await createModule(payload);
       }
       setModalOpen(false);
+      notifySuccess(editingModule ? 'Module updated successfully.' : 'Module created successfully.');
       loadModules();
     } catch (err) {
-      alert(err.message || 'Failed to save module.');
+      notifyError(err.message || 'Failed to save module.');
     }
   };
 
@@ -203,8 +224,9 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
     if (!moduleToDelete) return;
     try {
       await deleteModule(moduleToDelete);
+      notifySuccess('Module deleted successfully.');
     } catch (err) {
-      alert(err.message || 'Failed to delete module.');
+      notifyError(err.message || 'Failed to delete module.');
     } finally {
       setDeleteConfirmOpen(false);
       setModuleToDelete(null);
@@ -213,8 +235,13 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
   };
 
   const handleDuplicate = async (id) => {
-    try { await duplicateModule(id); loadModules(); }
-    catch (err) { alert(err.message || 'Failed to duplicate module.'); }
+    try {
+      await duplicateModule(id);
+      notifySuccess('Module duplicated successfully.');
+      loadModules();
+    } catch (err) {
+      notifyError(err.message || 'Failed to duplicate module.');
+    }
   };
 
   // ── Bulk selection ─────────────────────────────────────────────────────────
@@ -241,7 +268,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
   // ── Bulk timer ─────────────────────────────────────────────────────────────
 
   const openTimerModal = () => {
-    setTimerForm({ access_start: '', access_end: '' });
+    setTimerForm({ access_start: '', access_end: '', applyForLeads: true, applyForTeams: true });
     setTimerModalOpen(true);
   };
 
@@ -250,32 +277,47 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
     const accessStart = fromDatetimeLocal(timerForm.access_start);
     const accessEnd = fromDatetimeLocal(timerForm.access_end);
     if (accessStart && accessEnd && new Date(accessStart) >= new Date(accessEnd)) {
-      alert('Access end must be after access start.');
+      notifyError('Access end must be after access start.');
+      return;
+    }
+    if (!timerForm.applyForLeads && !timerForm.applyForTeams) {
+      notifyError('Please select at least one target: Domain Leads or Teams.');
       return;
     }
     setTimerSaving(true);
     try {
-      await bulkUpdateTimer([...selectedIds], accessStart, accessEnd);
+      await bulkUpdateTimer([...selectedIds], accessStart, accessEnd, timerForm.applyForLeads, timerForm.applyForTeams);
       setTimerModalOpen(false);
       setSelectedIds(new Set());
+      notifySuccess('Timer updated successfully.');
       loadModules();
     } catch (err) {
-      alert(err.message || 'Failed to update timers.');
+      notifyError(err.message || 'Failed to update timers.');
     } finally {
       setTimerSaving(false);
     }
   };
 
   const handleClearTimer = async () => {
-    if (!window.confirm(`Clear timer for ${selectedIds.size} module(s)?`)) return;
+    setClearTimerConfirmOpen(true);
+  };
+
+  const executeClearTimer = async () => {
+    if (!timerForm.applyForLeads && !timerForm.applyForTeams) {
+      notifyError('Please select at least one target: Domain Leads or Teams.');
+      return;
+    }
+
+    setClearTimerConfirmOpen(false);
     setTimerSaving(true);
     try {
-      await bulkUpdateTimer([...selectedIds], null, null);
+      await bulkUpdateTimer([...selectedIds], null, null, timerForm.applyForLeads, timerForm.applyForTeams);
       setTimerModalOpen(false);
       setSelectedIds(new Set());
+      notifyInfo('Timer restrictions cleared.');
       loadModules();
     } catch (err) {
-      alert(err.message || 'Failed to clear timers.');
+      notifyError(err.message || 'Failed to clear timers.');
     } finally {
       setTimerSaving(false);
     }
@@ -304,7 +346,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
   const buildCsvFromModules = (modulesList) => {
     const headers = [
       'Module ID', 'Module Name', 'Date',
-      'Access Start', 'Access End', 'Has Backend', 'Has Frontend', 'Assigned Leads',
+      'Lead Access Start', 'Lead Access End', 'Teams Access Start', 'Teams Access End', 'Has Backend', 'Has Frontend', 'Assigned Leads', 'Teams',
       'Group ID', 'Pair ID', 'Roll Numbers', 'Category', 'Is Merged', 'Partner Pair ID',
       'Overall Status', 'Backend Files', 'Backend API Endpoints', 'Backend Functions',
       'Backend Architecture Match', 'Backend Architecture Note',
@@ -321,9 +363,11 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
       const rowBase = [
         mod.id || '', mod.name || '', mod.date || '',
         formatDateTime(mod.access_start) || '', formatDateTime(mod.access_end) || '',
+        formatDateTime(mod.team_access_start) || '', formatDateTime(mod.team_access_end) || '',
         mod.has_backend !== false ? 'Yes' : 'No',
         mod.has_frontend !== false ? 'Yes' : 'No',
         mod.assigned_leads.join('; '),
+        Array.isArray(mod.assigned_teams) ? mod.assigned_teams.join('; ') : '',
       ];
 
       if (groups.length === 0) {
@@ -370,13 +414,15 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
   };
 
   const exportAllToCSV = () => {
-    if (!modules.length) { alert('No modules to export'); return; }
+    if (!modules.length) { notifyInfo('No modules to export.'); return; }
     downloadCsv(buildCsvFromModules(modules), 'all_modules_evaluation.csv');
+    notifySuccess('CSV export started.');
   };
 
   const exportToCSV = (mod) => {
-    if (!mod?.groups || !mod?.assigned_leads) { alert('Cannot export: Module data is incomplete'); return; }
+    if (!mod?.groups || !mod?.assigned_leads) { notifyError('Cannot export: Module data is incomplete.'); return; }
     downloadCsv(buildCsvFromModules([mod]), `${mod.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_full_evaluation.csv`);
+    notifySuccess(`Export started for ${mod.name || 'module'}.`);
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -389,7 +435,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
   );
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-full xl:max-w-7xl mx-auto">
       <header className="mb-8 flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Global Overview</h1>
@@ -436,7 +482,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
       {currentView === 'modules' ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full min-w-[1320px] text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
                   <th className="px-4 py-4 w-10">
@@ -446,10 +492,12 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
                   </th>
                   <th className="px-6 py-4">Module</th>
                   <th className="px-6 py-4">Date</th>
-                  <th className="px-6 py-4">Leads</th>
-                  <th className="px-6 py-4">Access Window</th>
+                  <th className="px-6 py-4">Domain Leads</th>
+                  <th className="px-6 py-4">Teams</th>
+                  <th className="px-6 py-4">Domain Leads Access Window</th>
+                  <th className="px-6 py-4">Teams Access Window</th>
                   <th className="px-6 py-4">Progress</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
+                  <th className="px-6 py-4 pr-10 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -458,7 +506,8 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
                   const totalPairs = mod.groups.length;
                   const functionalPairs = mod.groups.filter(g => g.evaluation?.is_functional).length;
                   const progress = totalPairs > 0 ? Math.round((functionalPairs / totalPairs) * 100) : 0;
-                  const status = getTimerStatus(mod.access_start, mod.access_end);
+                  const leadStatus = getTimerStatus(mod.access_start, mod.access_end);
+                  const teamStatus = getTimerStatus(mod.team_access_start, mod.team_access_end);
                   const isChecked = selectedIds.has(mod.id);
 
                   return (
@@ -489,13 +538,28 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
                           ? mod.assigned_leads.join(', ')
                           : <span className="italic text-gray-400">Unassigned</span>}
                       </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {Array.isArray(mod.assigned_teams) && mod.assigned_teams.length > 0
+                          ? mod.assigned_teams.join(', ')
+                          : <span className="italic text-gray-400">Unassigned</span>}
+                      </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_CLASSES[status.color]}`}>
-                          <Clock className="w-3 h-3 mr-1" /> {status.label}
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_CLASSES[leadStatus.color]}`}>
+                          <Clock className="w-3 h-3 mr-1" /> Lead: {leadStatus.label}
                         </span>
                         {(mod.access_start || mod.access_end) && (
                           <div className="text-xs text-gray-400 mt-1 font-mono">
                             {formatDateTime(mod.access_start) || '∞'} — {formatDateTime(mod.access_end) || '∞'}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_CLASSES[teamStatus.color]}`}>
+                          <Clock className="w-3 h-3 mr-1" /> Teams: {teamStatus.label}
+                        </span>
+                        {(mod.team_access_start || mod.team_access_end) && (
+                          <div className="text-xs text-gray-400 mt-1 font-mono">
+                            {formatDateTime(mod.team_access_start) || '∞'} — {formatDateTime(mod.team_access_end) || '∞'}
                           </div>
                         )}
                       </td>
@@ -507,19 +571,21 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
                           <span className="text-xs text-gray-600 font-medium">{functionalPairs}/{totalPairs}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right space-x-3 whitespace-nowrap">
-                        <button onClick={() => exportToCSV(mod)} className="text-emerald-600 hover:text-emerald-800 cursor-pointer p-1" title="Export CSV"><Download className="w-4 h-4 inline" /></button>
-                        <button onClick={() => onSelectModule(mod.id)} className="text-indigo-600 hover:text-indigo-800 text-sm font-medium cursor-pointer">Manage</button>
-                        <button onClick={() => handleDuplicate(mod.id)} className="text-gray-500 hover:text-indigo-600 cursor-pointer" title="Duplicate"><Copy className="w-4 h-4 inline" /></button>
-                        <button onClick={() => handleOpenModal(mod)} className="text-gray-500 hover:text-indigo-600 cursor-pointer" title="Edit"><Edit2 className="w-4 h-4 inline" /></button>
-                        <button onClick={() => confirmDelete(mod.id)} className="text-gray-500 hover:text-red-600 cursor-pointer" title="Delete"><Trash2 className="w-4 h-4 inline" /></button>
+                      <td className="px-6 py-4 pr-10">
+                        <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+                          <button onClick={() => exportToCSV(mod)} className="text-emerald-600 hover:text-emerald-800 cursor-pointer p-1" title="Export CSV"><Download className="w-4 h-4 inline" /></button>
+                          <button onClick={() => onSelectModule(mod.id)} className="text-indigo-600 hover:text-indigo-800 text-sm font-medium cursor-pointer">Manage</button>
+                          <button onClick={() => handleDuplicate(mod.id)} className="text-gray-500 hover:text-indigo-600 cursor-pointer" title="Duplicate"><Copy className="w-4 h-4 inline" /></button>
+                          <button onClick={() => handleOpenModal(mod)} className="text-gray-500 hover:text-indigo-600 cursor-pointer" title="Edit"><Edit2 className="w-4 h-4 inline" /></button>
+                          <button onClick={() => confirmDelete(mod.id)} className="text-gray-500 hover:text-red-600 cursor-pointer" title="Delete"><Trash2 className="w-4 h-4 inline" /></button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
                 {sortedModules.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="px-6 py-8 text-center text-gray-500 italic">No modules found. Create one to get started.</td>
+                    <td colSpan="9" className="px-6 py-8 text-center text-gray-500 italic">No modules found. Create one to get started.</td>
                   </tr>
                 )}
               </tbody>
@@ -532,8 +598,8 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
 
       {/* ── Create / Edit Module Modal ── */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-xl">
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-[140] p-4 pt-20 pb-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-xl max-h-[calc(100vh-7rem)] overflow-y-auto">
             <h3 className="text-lg font-bold mb-4">{editingModule ? 'Edit Module' : 'Create Module'}</h3>
             <form onSubmit={handleSave} className="space-y-4">
               <div>
@@ -550,8 +616,12 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
                 <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Leads <span className="font-normal text-gray-400">(comma separated emails)</span></label>
                 <input type="text" value={formData.assigned_leads} onChange={e => setFormData({ ...formData, assigned_leads: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" placeholder="lead1@example.com, lead2@example.com" />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Teams <span className="font-normal text-gray-400">(comma separated emails)</span></label>
+                <input type="text" value={formData.assigned_teams} onChange={e => setFormData({ ...formData, assigned_teams: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" placeholder="team1@example.com, team2@example.com" />
+              </div>
               <fieldset className="border border-gray-200 rounded-lg p-3">
-                <legend className="text-xs font-semibold text-gray-500 px-1 uppercase tracking-wider">Access Window <span className="font-normal normal-case">(optional)</span></legend>
+                <legend className="text-xs font-semibold text-gray-500 px-1 uppercase tracking-wider">Domain Leads Access Window <span className="font-normal normal-case">(optional)</span></legend>
                 <div className="grid grid-cols-2 gap-4 mt-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
@@ -563,6 +633,20 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
                   </div>
                 </div>
                 <p className="text-xs text-gray-400 mt-2">Leave both empty for unrestricted access (leads can log in any time).</p>
+              </fieldset>
+              <fieldset className="border border-gray-200 rounded-lg p-3">
+                <legend className="text-xs font-semibold text-gray-500 px-1 uppercase tracking-wider">Teams Access Window <span className="font-normal normal-case">(optional)</span></legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
+                    <input type="datetime-local" value={formData.team_access_start} onChange={e => setFormData({ ...formData, team_access_start: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
+                    <input type="datetime-local" value={formData.team_access_end} onChange={e => setFormData({ ...formData, team_access_end: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">Leave both empty for unrestricted Teams access.</p>
               </fieldset>
               <div className="grid grid-cols-2 gap-4">
                 <label className="flex items-center space-x-2">
@@ -585,17 +669,37 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
 
       {/* ── Bulk Timer Modal ── */}
       {timerModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-[140] p-4 pt-20 pb-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl max-h-[calc(100vh-7rem)] overflow-y-auto">
             <div className="flex items-center mb-4">
               <Timer className="w-5 h-5 text-amber-500 mr-2" />
               <h3 className="text-lg font-bold">Set Access Timer</h3>
             </div>
             <p className="text-sm text-gray-500 mb-4">
               Setting timer for <span className="font-semibold text-gray-700">{selectedIds.size} module{selectedIds.size !== 1 ? 's' : ''}</span>.
-              All selected modules will have their access window updated.
+              All selected modules will have their selected access windows updated.
             </p>
             <form onSubmit={handleBulkTimerSave} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex items-center space-x-2 rounded-lg border border-gray-200 px-3 py-2 bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={timerForm.applyForLeads}
+                    onChange={e => setTimerForm({ ...timerForm, applyForLeads: e.target.checked })}
+                    className="rounded text-amber-500 focus:ring-amber-500"
+                  />
+                  <span className="text-sm text-gray-700 font-medium">Domain Leads</span>
+                </label>
+                <label className="flex items-center space-x-2 rounded-lg border border-gray-200 px-3 py-2 bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={timerForm.applyForTeams}
+                    onChange={e => setTimerForm({ ...timerForm, applyForTeams: e.target.checked })}
+                    className="rounded text-amber-500 focus:ring-amber-500"
+                  />
+                  <span className="text-sm text-gray-700 font-medium">Teams</span>
+                </label>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Access Start</label>
                 <input
@@ -644,8 +748,18 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
         isOpen={deleteConfirmOpen}
         title="Delete Module"
         message="Are you sure you want to delete this module? This will also delete all pairs and evaluations inside it. This action cannot be undone."
+        confirmLabel="Delete Module"
         onConfirm={handleDelete}
         onCancel={() => { setDeleteConfirmOpen(false); setModuleToDelete(null); }}
+      />
+
+      <ConfirmModal
+        isOpen={clearTimerConfirmOpen}
+        title="Clear Timer"
+        message={`Clear timer for ${selectedIds.size} module${selectedIds.size !== 1 ? 's' : ''}?`}
+        confirmLabel="Clear Timer"
+        onConfirm={executeClearTimer}
+        onCancel={() => setClearTimerConfirmOpen(false)}
       />
     </div>
   );

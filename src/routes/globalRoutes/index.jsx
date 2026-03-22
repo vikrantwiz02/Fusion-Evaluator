@@ -55,17 +55,35 @@ export default function GlobalRoutes() {
     return () => window.removeEventListener('auth:logout', handleLogout);
   }, []);
 
-  const shouldAutoLogout = useMemo(() => {
-    if (!user || user.role !== 'lead') return false;
+  const getAccessWindowForUserRole = (mod, role) => {
+    if (role === 'team') {
+      return {
+        start: mod?.team_access_start ?? null,
+        end: mod?.team_access_end ?? null,
+      };
+    }
+    return {
+      start: mod?.access_start ?? null,
+      end: mod?.access_end ?? null,
+    };
+  };
 
-    const assigned = Array.isArray(user.assignedModules) ? user.assignedModules : [];
+  const shouldAutoLogout = useMemo(() => {
+    if (!user || (user.role !== 'lead' && user.role !== 'team')) return false;
+
+    const assigned = user.role === 'team'
+      ? (Array.isArray(user.assignedTeamModules) ? user.assignedTeamModules : [])
+      : (Array.isArray(user.assignedLeadModules) ? user.assignedLeadModules : (Array.isArray(user.assignedModules) ? user.assignedModules : []));
     if (assigned.length === 0) return true;
 
-    return assigned.every(mod => !isWithinAccessWindow(mod.access_start ?? null, mod.access_end ?? null));
+    return assigned.every(mod => {
+      const win = getAccessWindowForUserRole(mod, user.role);
+      return !isWithinAccessWindow(win.start, win.end);
+    });
   }, [user]);
 
   useEffect(() => {
-    if (!user || user.role !== 'lead') return;
+    if (!user || (user.role !== 'lead' && user.role !== 'team')) return;
 
     if (shouldAutoLogout) {
       handleLogout();
@@ -78,9 +96,14 @@ export default function GlobalRoutes() {
 
       try {
         const parsed = JSON.parse(storedUser);
-        const assigned = Array.isArray(parsed?.assignedModules) ? parsed.assignedModules : [];
+        const assigned = parsed?.role === 'team'
+          ? (Array.isArray(parsed?.assignedTeamModules) ? parsed.assignedTeamModules : [])
+          : (Array.isArray(parsed?.assignedLeadModules) ? parsed.assignedLeadModules : (Array.isArray(parsed?.assignedModules) ? parsed.assignedModules : []));
         const sessionExpired = assigned.length === 0
-          || assigned.every(mod => !isWithinAccessWindow(mod.access_start ?? null, mod.access_end ?? null));
+          || assigned.every(mod => {
+            const win = getAccessWindowForUserRole(mod, parsed?.role);
+            return !isWithinAccessWindow(win.start, win.end);
+          });
 
         if (sessionExpired) {
           handleLogout();
@@ -90,19 +113,30 @@ export default function GlobalRoutes() {
       }
     }, 15000);
 
-    const syncTimer = window.setInterval(async () => {
+    const refreshAccessCapabilities = async () => {
       try {
-        const freshAssignedModules = await fetchAllModules();
-        const assigned = Array.isArray(freshAssignedModules) ? freshAssignedModules : [];
+        const [leadModules, teamModules] = await Promise.all([
+          fetchAllModules('lead'),
+          fetchAllModules('teams'),
+        ]);
+        const hasLead = Array.isArray(leadModules) && leadModules.length > 0;
+        const hasTeams = Array.isArray(teamModules) && teamModules.length > 0;
 
-        if (assigned.length === 0) {
+        if (!hasLead && !hasTeams) {
           handleLogout();
           return;
         }
 
+        const nextRole = hasLead ? 'lead' : 'team';
+
         const updatedUser = {
           ...user,
-          assignedModules: assigned,
+          role: nextRole,
+          assignedLeadModules: Array.isArray(leadModules) ? leadModules : [],
+          assignedTeamModules: Array.isArray(teamModules) ? teamModules : [],
+          assignedModules: nextRole === 'lead' ? (Array.isArray(leadModules) ? leadModules : []) : (Array.isArray(teamModules) ? teamModules : []),
+          canAccessLeadView: hasLead,
+          canAccessTeamsView: hasTeams,
         };
 
         window.localStorage.setItem('lab-user', JSON.stringify(updatedUser));
@@ -110,7 +144,10 @@ export default function GlobalRoutes() {
       } catch {
         // Keep current session if refresh fails temporarily.
       }
-    }, 60000);
+    };
+
+    refreshAccessCapabilities();
+    const syncTimer = window.setInterval(refreshAccessCapabilities, 60000);
 
     return () => {
       window.clearInterval(timer);
@@ -118,7 +155,11 @@ export default function GlobalRoutes() {
     };
   }, [shouldAutoLogout, user]);
 
-  const homePath = user?.role === 'admin' ? '/admin/modules' : '/lead/modules';
+  const homePath = user?.role === 'admin'
+    ? '/admin/modules'
+    : user?.canAccessLeadView
+      ? '/lead/modules'
+      : '/lead/teams-modules';
 
   return (
     <Routes>

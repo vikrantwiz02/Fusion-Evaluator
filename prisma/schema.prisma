@@ -11,14 +11,21 @@ model Module {
   name            String
   date            String          @default("")
   assigned_leads  String[]        @default([])
+  assigned_teams  String[]        @default([])
   access_start    DateTime?
   access_end      DateTime?
+  team_access_start DateTime?
+  team_access_end DateTime?
   has_backend     Boolean         @default(true)
   has_frontend    Boolean         @default(true)
   spec_use_cases  Json            @default("[]")
   spec_workflows  Json            @default("[]")
   spec_rules      Json            @default("[]")
   spec_layout     Json            @default("{}")
+  team_spec_use_cases Json        @default("[]")
+  team_spec_workflows Json        @default("[]")
+  team_spec_rules Json            @default("[]")
+  team_spec_layout Json           @default("{}")
   groups          Group[]
   divisions       GroupDivision[]
   created_at      DateTime        @default(now())

@@ -21,14 +21,20 @@ const mongooseReady = mongoose.connection.readyState === 1
       socketTimeoutMS: 45000,
     });
 
-function normalizeAssignedLeads(payload) {
+function normalizeAssignments(payload) {
   const assignedLeads = Array.isArray(payload.assigned_leads)
     ? payload.assigned_leads
+    : [];
+  const assignedTeams = Array.isArray(payload.assigned_teams)
+    ? payload.assigned_teams
     : [];
 
   return {
     ...payload,
     assigned_leads: assignedLeads
+      .map(email => String(email).trim().toLowerCase())
+      .filter(Boolean),
+    assigned_teams: assignedTeams
       .map(email => String(email).trim().toLowerCase())
       .filter(Boolean),
   };
@@ -74,7 +80,7 @@ export default async function handler(req, res) {
     if (req.method === 'PUT') {
       const mod = await Module.findByIdAndUpdate(
         id,
-        normalizeAssignedLeads(req.body),
+        normalizeAssignments(req.body),
         { new: true, runValidators: true }
       );
       if (!mod) return res.status(404).json({ error: 'Module not found' });

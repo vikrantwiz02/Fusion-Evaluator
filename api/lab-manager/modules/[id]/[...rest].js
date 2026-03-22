@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Module from '../../../../lib/models/Module.js';
 import { serializeModule } from '../../../../lib/utils/serializeModule.js';
 import { canAccessModule, getRequestActor } from '../../../../lib/utils/moduleAccess.js';
+import { canAccessTeamsModule } from '../../../../lib/utils/moduleAccess.js';
 
 export const config = {
   api: {
@@ -283,9 +284,6 @@ export default async function handler(req, res) {
       if (!canAccessModule(mod, actor)) {
         return res.status(403).json({ error: 'Access denied for this module' });
       }
-      if (actor.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin access required' });
-      }
 
       mod.spec_use_cases = normalizeSpecRows(req.body?.useCases);
       mod.spec_workflows = normalizeSpecRows(req.body?.workflows);
@@ -302,6 +300,51 @@ export default async function handler(req, res) {
         businessRules: Array.isArray(mod.spec_rules) ? mod.spec_rules : [],
         layout: mod.spec_layout && typeof mod.spec_layout === 'object' && !Array.isArray(mod.spec_layout)
           ? mod.spec_layout
+          : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} },
+      });
+    }
+
+    // GET /api/lab-manager/modules/:id/team-specifications
+    if (req.method === 'GET' && path[0] === 'team-specifications') {
+      const mod = await Module.findById(id);
+      if (!mod) return res.status(404).json({ error: 'Module not found' });
+      if (!(actor?.role === 'admin' || canAccessTeamsModule(mod, actor))) {
+        return res.status(403).json({ error: 'Access denied for this module' });
+      }
+
+      return res.status(200).json({
+        useCases: Array.isArray(mod.team_spec_use_cases) ? mod.team_spec_use_cases : [],
+        workflows: Array.isArray(mod.team_spec_workflows) ? mod.team_spec_workflows : [],
+        businessRules: Array.isArray(mod.team_spec_rules) ? mod.team_spec_rules : [],
+        layout: mod.team_spec_layout && typeof mod.team_spec_layout === 'object' && !Array.isArray(mod.team_spec_layout)
+          ? mod.team_spec_layout
+          : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} },
+      });
+    }
+
+    // PUT /api/lab-manager/modules/:id/team-specifications
+    if (req.method === 'PUT' && path[0] === 'team-specifications') {
+      const mod = await Module.findById(id);
+      if (!mod) return res.status(404).json({ error: 'Module not found' });
+      if (!(actor?.role === 'admin' || canAccessTeamsModule(mod, actor))) {
+        return res.status(403).json({ error: 'Access denied for this module' });
+      }
+
+      mod.team_spec_use_cases = normalizeSpecRows(req.body?.useCases);
+      mod.team_spec_workflows = normalizeSpecRows(req.body?.workflows);
+      mod.team_spec_rules = normalizeSpecRows(req.body?.businessRules);
+      mod.team_spec_layout = (req.body?.layout && typeof req.body.layout === 'object' && !Array.isArray(req.body.layout))
+        ? req.body.layout
+        : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} };
+
+      await mod.save();
+      return res.status(200).json({
+        success: true,
+        useCases: Array.isArray(mod.team_spec_use_cases) ? mod.team_spec_use_cases : [],
+        workflows: Array.isArray(mod.team_spec_workflows) ? mod.team_spec_workflows : [],
+        businessRules: Array.isArray(mod.team_spec_rules) ? mod.team_spec_rules : [],
+        layout: mod.team_spec_layout && typeof mod.team_spec_layout === 'object' && !Array.isArray(mod.team_spec_layout)
+          ? mod.team_spec_layout
           : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} },
       });
     }
