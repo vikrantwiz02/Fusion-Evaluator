@@ -4,10 +4,12 @@ import { ChevronRight, Clock, Calendar } from 'lucide-react';
 
 export default function LeadModulesList({ modules, onSelectModule, viewType = 'lead' }) {
   const [liveModules, setLiveModules] = useState(() => (Array.isArray(modules) ? modules : []));
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Render immediately from login payload to avoid initial blank state.
     setLiveModules(Array.isArray(modules) ? modules : []);
+    setLoading(false);
 
     const scope = viewType === 'teams' ? 'teams' : 'lead';
     let disposed = false;
@@ -17,11 +19,13 @@ export default function LeadModulesList({ modules, onSelectModule, viewType = 'l
         const fresh = await fetchAllModules(scope);
         if (!disposed) {
           setLiveModules(Array.isArray(fresh) ? fresh : []);
+          setLoading(false);
         }
       } catch {
         // If refresh fails, avoid showing stale cards that may now be unauthorized.
         if (!disposed) {
           setLiveModules([]);
+          setLoading(false);
         }
       }
     };
@@ -120,7 +124,13 @@ export default function LeadModulesList({ modules, onSelectModule, viewType = 'l
             </div>
           );
         })}
-        {liveModules.length === 0 && (
+        {loading && (
+          <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
+            <p className="text-gray-500">Loading modules…</p>
+          </div>
+        )}
+
+        {!loading && liveModules.length === 0 && (
           <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
             <p className="text-gray-500">You have not been assigned to any modules yet.</p>
           </div>
