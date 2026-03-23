@@ -272,22 +272,53 @@ export const uploadModuleSpecsZip = async (moduleId, moduleSpecsZip, options = {
   const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const totalChunks = Math.max(1, Math.ceil(base64Data.length / chunkSize));
   let lastResponse = null;
+  const uploadedAt = new Date().toISOString();
+
+  const moduleSpecsZipPayload = {
+    name: moduleSpecsZip.name,
+    type: moduleSpecsZip.type || 'application/zip',
+    size: moduleSpecsZip.size || 0,
+    uploadedAt,
+    dataUrl,
+  };
 
   for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
     const start = chunkIndex * chunkSize;
     const end = start + chunkSize;
     const chunkData = base64Data.slice(start, end);
 
-    const { data } = await api.put(`/modules/${moduleId}/specifications/zip`, {
-      uploadId,
-      fileName: moduleSpecsZip.name,
-      fileType: moduleSpecsZip.type || 'application/zip',
-      fileSize: moduleSpecsZip.size || 0,
-      uploadedAt: new Date().toISOString(),
-      chunkIndex,
-      totalChunks,
-      chunkData,
-    });
+    let data;
+    try {
+      const res = await api.put(`/modules/${moduleId}/specifications/zip`, {
+        uploadId,
+        fileName: moduleSpecsZip.name,
+        fileType: moduleSpecsZip.type || 'application/zip',
+        fileSize: moduleSpecsZip.size || 0,
+        uploadedAt,
+        chunkIndex,
+        totalChunks,
+        chunkData,
+      });
+      data = res.data;
+    } catch (error) {
+      // Compatibility fallback: backend not yet deployed with /specifications/zip route.
+      if (error?.response?.status === 404) {
+        const current = await fetchModuleSpecifications(moduleId);
+        const { data: legacy } = await api.put(`/modules/${moduleId}`, {
+          spec_layout: {
+            ...(current?.layout && typeof current.layout === 'object' && !Array.isArray(current.layout) ? current.layout : {}),
+            moduleSpecsZip: moduleSpecsZipPayload,
+          },
+        }, typeof options?.onUploadProgress === 'function' ? { onUploadProgress: options.onUploadProgress } : undefined);
+
+        return {
+          layout: legacy?.spec_layout && typeof legacy.spec_layout === 'object' && !Array.isArray(legacy.spec_layout)
+            ? legacy.spec_layout
+            : {},
+        };
+      }
+      throw error;
+    }
 
     lastResponse = data;
     if (typeof options?.onUploadProgress === 'function') {
@@ -320,22 +351,53 @@ export const uploadTeamsModuleSpecsZip = async (moduleId, moduleSpecsZip, option
   const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const totalChunks = Math.max(1, Math.ceil(base64Data.length / chunkSize));
   let lastResponse = null;
+  const uploadedAt = new Date().toISOString();
+
+  const moduleSpecsZipPayload = {
+    name: moduleSpecsZip.name,
+    type: moduleSpecsZip.type || 'application/zip',
+    size: moduleSpecsZip.size || 0,
+    uploadedAt,
+    dataUrl,
+  };
 
   for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
     const start = chunkIndex * chunkSize;
     const end = start + chunkSize;
     const chunkData = base64Data.slice(start, end);
 
-    const { data } = await api.put(`/modules/${moduleId}/team-specifications/zip`, {
-      uploadId,
-      fileName: moduleSpecsZip.name,
-      fileType: moduleSpecsZip.type || 'application/zip',
-      fileSize: moduleSpecsZip.size || 0,
-      uploadedAt: new Date().toISOString(),
-      chunkIndex,
-      totalChunks,
-      chunkData,
-    });
+    let data;
+    try {
+      const res = await api.put(`/modules/${moduleId}/team-specifications/zip`, {
+        uploadId,
+        fileName: moduleSpecsZip.name,
+        fileType: moduleSpecsZip.type || 'application/zip',
+        fileSize: moduleSpecsZip.size || 0,
+        uploadedAt,
+        chunkIndex,
+        totalChunks,
+        chunkData,
+      });
+      data = res.data;
+    } catch (error) {
+      // Compatibility fallback: backend not yet deployed with /team-specifications/zip route.
+      if (error?.response?.status === 404) {
+        const current = await fetchTeamsModuleSpecifications(moduleId);
+        const { data: legacy } = await api.put(`/modules/${moduleId}`, {
+          team_spec_layout: {
+            ...(current?.layout && typeof current.layout === 'object' && !Array.isArray(current.layout) ? current.layout : {}),
+            moduleSpecsZip: moduleSpecsZipPayload,
+          },
+        }, typeof options?.onUploadProgress === 'function' ? { onUploadProgress: options.onUploadProgress } : undefined);
+
+        return {
+          layout: legacy?.team_spec_layout && typeof legacy.team_spec_layout === 'object' && !Array.isArray(legacy.team_spec_layout)
+            ? legacy.team_spec_layout
+            : {},
+        };
+      }
+      throw error;
+    }
 
     lastResponse = data;
     if (typeof options?.onUploadProgress === 'function') {
