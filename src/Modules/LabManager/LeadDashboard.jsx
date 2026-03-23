@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   fetchModuleDetails,
+  fetchModuleSpecifications,
   updateEvaluation,
   createGroup,
   updateGroup,
@@ -280,13 +281,13 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     try {
       let zip = moduleData?.spec_layout?.moduleSpecsZip;
 
-      // If local state is stale, fetch latest module details once before failing.
+      // Fetch full specifications payload (contains zip dataUrl) on demand.
       if (!zip?.dataUrl || !zip?.name) {
         try {
-          const fresh = await fetchModuleDetails(moduleId);
-          zip = fresh?.spec_layout?.moduleSpecsZip;
+          const freshSpecs = await fetchModuleSpecifications(moduleId);
+          zip = freshSpecs?.layout?.moduleSpecsZip;
           if (zip?.dataUrl && zip?.name) {
-            setModuleData(prev => prev ? { ...prev, spec_layout: fresh.spec_layout || {} } : prev);
+            setModuleData(prev => prev ? { ...prev, spec_layout: freshSpecs.layout || {} } : prev);
           }
         } catch {
           // Fall through to user-facing error below.
@@ -605,7 +606,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
 
   const specsZipMetaText = useMemo(() => {
     const zip = moduleData?.spec_layout?.moduleSpecsZip;
-    if (!zip?.name || !zip?.dataUrl) return 'No Module Specs zip uploaded yet.';
+    if (!zip?.name) return 'No Module Specs zip uploaded yet.';
 
     const uploadedAt = zip.uploadedAt ? new Date(zip.uploadedAt) : null;
     const when = uploadedAt && !Number.isNaN(uploadedAt.getTime())
