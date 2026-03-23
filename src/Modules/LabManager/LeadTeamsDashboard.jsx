@@ -128,25 +128,10 @@ export default function LeadTeamsDashboard({ moduleId, user, onBack }) {
     setZipUploadFileName(file.name);
 
     try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('Unable to read file'));
-        reader.readAsDataURL(file);
-      });
-
-      const nextZip = {
-        name: file.name,
-        type: file.type || 'application/zip',
-        size: file.size,
-        uploadedAt: new Date().toISOString(),
-        dataUrl,
-      };
-
       setZipUploadStatus('uploading');
       setZipUploadProgress(1);
 
-      const saved = await uploadTeamsModuleSpecsZip(moduleId, nextZip, {
+      const saved = await uploadTeamsModuleSpecsZip(moduleId, file, {
         onUploadProgress: (progressEvent) => {
           const total = Number(progressEvent?.total || 0);
           const loaded = Number(progressEvent?.loaded || 0);
@@ -171,7 +156,8 @@ export default function LeadTeamsDashboard({ moduleId, user, onBack }) {
         setZipUploadStatus('idle');
         setZipUploadProgress(0);
       }, 900);
-      showToast('success', `Module Specs zip uploaded: ${nextZip.name}`);
+      const savedName = saved?.layout?.moduleSpecsZip?.name || file.name;
+      showToast('success', `Module Specs zip uploaded: ${savedName}`);
     } catch {
       setZipUploadStatus('idle');
       setZipUploadProgress(0);

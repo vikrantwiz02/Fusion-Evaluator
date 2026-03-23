@@ -255,56 +255,98 @@ export const saveTeamsModuleSpecifications = async (moduleId, payload, options =
 };
 
 export const uploadModuleSpecsZip = async (moduleId, moduleSpecsZip, options = {}) => {
-  const uploadConfig = typeof options?.onUploadProgress === 'function'
-    ? { onUploadProgress: options.onUploadProgress }
-    : undefined;
+  const chunkSize = Number(options?.chunkSize || 240000);
+  const readerResult = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Unable to read file'));
+    reader.readAsDataURL(moduleSpecsZip);
+  });
 
-  const payload = { moduleSpecsZip };
+  const dataUrl = String(readerResult || '');
+  const base64Data = dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
+  if (!base64Data) {
+    throw new Error('Failed to prepare zip upload data');
+  }
 
-  try {
-    const { data } = await api.put(`/modules/${moduleId}/specifications/zip`, payload, uploadConfig);
-    return {
-      layout: data?.layout && typeof data.layout === 'object' && !Array.isArray(data.layout) ? data.layout : {},
-    };
-  } catch (error) {
-    if (error?.response?.status !== 404) {
-      throw error;
+  const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const totalChunks = Math.max(1, Math.ceil(base64Data.length / chunkSize));
+  let lastResponse = null;
+
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+    const start = chunkIndex * chunkSize;
+    const end = start + chunkSize;
+    const chunkData = base64Data.slice(start, end);
+
+    const { data } = await api.put(`/modules/${moduleId}/specifications/zip`, {
+      uploadId,
+      fileName: moduleSpecsZip.name,
+      fileType: moduleSpecsZip.type || 'application/zip',
+      fileSize: moduleSpecsZip.size || 0,
+      uploadedAt: new Date().toISOString(),
+      chunkIndex,
+      totalChunks,
+      chunkData,
+    });
+
+    lastResponse = data;
+    if (typeof options?.onUploadProgress === 'function') {
+      options.onUploadProgress({ loaded: chunkIndex + 1, total: totalChunks });
     }
   }
 
-  const { data } = await api.put(`/modules/${moduleId}`, {
-    spec_layout: { moduleSpecsZip },
-  }, uploadConfig);
-
   return {
-    layout: data?.spec_layout && typeof data.spec_layout === 'object' && !Array.isArray(data.spec_layout) ? data.spec_layout : {},
+    layout: lastResponse?.layout && typeof lastResponse.layout === 'object' && !Array.isArray(lastResponse.layout)
+      ? lastResponse.layout
+      : {},
   };
 };
 
 export const uploadTeamsModuleSpecsZip = async (moduleId, moduleSpecsZip, options = {}) => {
-  const uploadConfig = typeof options?.onUploadProgress === 'function'
-    ? { onUploadProgress: options.onUploadProgress }
-    : undefined;
+  const chunkSize = Number(options?.chunkSize || 240000);
+  const readerResult = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Unable to read file'));
+    reader.readAsDataURL(moduleSpecsZip);
+  });
 
-  const payload = { moduleSpecsZip };
+  const dataUrl = String(readerResult || '');
+  const base64Data = dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
+  if (!base64Data) {
+    throw new Error('Failed to prepare zip upload data');
+  }
 
-  try {
-    const { data } = await api.put(`/modules/${moduleId}/team-specifications/zip`, payload, uploadConfig);
-    return {
-      layout: data?.layout && typeof data.layout === 'object' && !Array.isArray(data.layout) ? data.layout : {},
-    };
-  } catch (error) {
-    if (error?.response?.status !== 404) {
-      throw error;
+  const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const totalChunks = Math.max(1, Math.ceil(base64Data.length / chunkSize));
+  let lastResponse = null;
+
+  for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+    const start = chunkIndex * chunkSize;
+    const end = start + chunkSize;
+    const chunkData = base64Data.slice(start, end);
+
+    const { data } = await api.put(`/modules/${moduleId}/team-specifications/zip`, {
+      uploadId,
+      fileName: moduleSpecsZip.name,
+      fileType: moduleSpecsZip.type || 'application/zip',
+      fileSize: moduleSpecsZip.size || 0,
+      uploadedAt: new Date().toISOString(),
+      chunkIndex,
+      totalChunks,
+      chunkData,
+    });
+
+    lastResponse = data;
+    if (typeof options?.onUploadProgress === 'function') {
+      options.onUploadProgress({ loaded: chunkIndex + 1, total: totalChunks });
     }
   }
 
-  const { data } = await api.put(`/modules/${moduleId}`, {
-    team_spec_layout: { moduleSpecsZip },
-  }, uploadConfig);
-
   return {
-    layout: data?.team_spec_layout && typeof data.team_spec_layout === 'object' && !Array.isArray(data.team_spec_layout) ? data.team_spec_layout : {},
+    layout: lastResponse?.layout && typeof lastResponse.layout === 'object' && !Array.isArray(lastResponse.layout)
+      ? lastResponse.layout
+      : {},
   };
 };
 
