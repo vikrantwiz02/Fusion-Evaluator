@@ -57,6 +57,45 @@ function normalizeSpecRows(rows) {
     });
 }
 
+function sanitizeZipPayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const name = String(value.name || '').trim();
+  const dataUrl = String(value.dataUrl || '').trim();
+  if (!name || !dataUrl) {
+    return null;
+  }
+
+  return {
+    name,
+    type: String(value.type || 'application/zip').trim() || 'application/zip',
+    size: Number.isFinite(Number(value.size)) ? Number(value.size) : 0,
+    uploadedAt: String(value.uploadedAt || '').trim() || new Date().toISOString(),
+    dataUrl,
+  };
+}
+
+function normalizeSpecLayoutWithZip(layout, existingLayout = {}) {
+  const base = (layout && typeof layout === 'object' && !Array.isArray(layout))
+    ? { ...layout }
+    : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} };
+
+  const existingZip = sanitizeZipPayload(existingLayout?.moduleSpecsZip);
+  const incomingZip = sanitizeZipPayload(base.moduleSpecsZip);
+
+  if (incomingZip) {
+    base.moduleSpecsZip = incomingZip;
+  } else if (existingZip) {
+    base.moduleSpecsZip = existingZip;
+  } else {
+    delete base.moduleSpecsZip;
+  }
+
+  return base;
+}
+
 // Simple connection handler
 const mongooseReady = mongoose.connection.readyState === 1 
   ? Promise.resolve() 
@@ -285,12 +324,28 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Access denied for this module' });
       }
 
+      if (path[1] === 'zip') {
+        const nextZip = sanitizeZipPayload(req.body?.moduleSpecsZip);
+        if (!nextZip) {
+          return res.status(400).json({ error: 'moduleSpecsZip.name and moduleSpecsZip.dataUrl are required' });
+        }
+
+        mod.spec_layout = normalizeSpecLayoutWithZip(mod.spec_layout, mod.spec_layout);
+        mod.spec_layout.moduleSpecsZip = nextZip;
+        await mod.save();
+
+        return res.status(200).json({
+          success: true,
+          layout: mod.spec_layout && typeof mod.spec_layout === 'object' && !Array.isArray(mod.spec_layout)
+            ? mod.spec_layout
+            : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} },
+        });
+      }
+
       mod.spec_use_cases = normalizeSpecRows(req.body?.useCases);
       mod.spec_workflows = normalizeSpecRows(req.body?.workflows);
       mod.spec_rules = normalizeSpecRows(req.body?.businessRules);
-      mod.spec_layout = (req.body?.layout && typeof req.body.layout === 'object' && !Array.isArray(req.body.layout))
-        ? req.body.layout
-        : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} };
+      mod.spec_layout = normalizeSpecLayoutWithZip(req.body?.layout, mod.spec_layout);
 
       await mod.save();
       return res.status(200).json({
@@ -330,12 +385,28 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Access denied for this module' });
       }
 
+      if (path[1] === 'zip') {
+        const nextZip = sanitizeZipPayload(req.body?.moduleSpecsZip);
+        if (!nextZip) {
+          return res.status(400).json({ error: 'moduleSpecsZip.name and moduleSpecsZip.dataUrl are required' });
+        }
+
+        mod.team_spec_layout = normalizeSpecLayoutWithZip(mod.team_spec_layout, mod.team_spec_layout);
+        mod.team_spec_layout.moduleSpecsZip = nextZip;
+        await mod.save();
+
+        return res.status(200).json({
+          success: true,
+          layout: mod.team_spec_layout && typeof mod.team_spec_layout === 'object' && !Array.isArray(mod.team_spec_layout)
+            ? mod.team_spec_layout
+            : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} },
+        });
+      }
+
       mod.team_spec_use_cases = normalizeSpecRows(req.body?.useCases);
       mod.team_spec_workflows = normalizeSpecRows(req.body?.workflows);
       mod.team_spec_rules = normalizeSpecRows(req.body?.businessRules);
-      mod.team_spec_layout = (req.body?.layout && typeof req.body.layout === 'object' && !Array.isArray(req.body.layout))
-        ? req.body.layout
-        : { columnWidths: {}, rowHeights: {}, extraSections: [], sectionColumns: {} };
+      mod.team_spec_layout = normalizeSpecLayoutWithZip(req.body?.layout, mod.team_spec_layout);
 
       await mod.save();
       return res.status(200).json({

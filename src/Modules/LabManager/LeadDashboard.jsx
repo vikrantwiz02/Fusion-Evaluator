@@ -10,6 +10,7 @@ import {
   updateDivision,
   deleteDivision,
   saveModuleSpecifications,
+  uploadModuleSpecsZip,
 } from './api';
 import FileChecklist from './components/FileChecklist';
 import EditableList from './components/EditableList';
@@ -178,6 +179,9 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const [primaryView, setPrimaryView] = useState('evaluation');
   const [sideBySide, setSideBySide] = useState(false);
   const [specAutoSaveStatus, setSpecAutoSaveStatus] = useState('idle');
+  const [zipUploadStatus, setZipUploadStatus] = useState('idle');
+  const [zipUploadProgress, setZipUploadProgress] = useState(0);
+  const [zipUploadFileName, setZipUploadFileName] = useState('');
   const [toast, setToast] = useState({ open: false, type: 'info', message: '' });
   const specsUploadInputRef = useRef(null);
   const toastTimerRef = useRef(null);
@@ -225,6 +229,10 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       return;
     }
 
+    setZipUploadStatus('preparing');
+    setZipUploadProgress(0);
+    setZipUploadFileName(file.name);
+
     try {
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -241,22 +249,41 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         dataUrl,
       };
 
-      const saved = await saveModuleSpecifications(moduleId, {
-        useCases: moduleSpecificationsData.useCases,
-        workflows: moduleSpecificationsData.workflows,
-        businessRules: moduleSpecificationsData.businessRules,
-        layout: {
-          ...(moduleSpecificationsData.layout || {}),
-          moduleSpecsZip: nextZip,
+      setZipUploadStatus('uploading');
+      setZipUploadProgress(1);
+
+      const saved = await uploadModuleSpecsZip(moduleId, nextZip, {
+        onUploadProgress: (progressEvent) => {
+          const total = Number(progressEvent?.total || 0);
+          const loaded = Number(progressEvent?.loaded || 0);
+          if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(loaded)) return;
+          const pct = Math.max(1, Math.min(99, Math.round((loaded / total) * 100)));
+          setZipUploadProgress(pct);
         },
       });
 
-      handleSpecificationsSaved(saved);
+      setModuleData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          spec_layout: saved.layout && typeof saved.layout === 'object' && !Array.isArray(saved.layout)
+            ? saved.layout
+            : prev.spec_layout || {},
+        };
+      });
+      setZipUploadProgress(100);
+      setZipUploadStatus('done');
+      window.setTimeout(() => {
+        setZipUploadStatus('idle');
+        setZipUploadProgress(0);
+      }, 900);
 
       // Refresh from server to ensure the zip was persisted in backend state.
       await loadData({ silent: true });
       showToast('success', `Module Specs zip uploaded: ${nextZip.name}`);
     } catch {
+      setZipUploadStatus('idle');
+      setZipUploadProgress(0);
       showToast('error', 'Failed to upload Module Specs zip.');
     } finally {
       event.target.value = '';
@@ -679,9 +706,17 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                 <>
                   <button
                     onClick={triggerSpecsZipUpload}
-                    className="bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm"
+                    disabled={zipUploadStatus === 'preparing' || zipUploadStatus === 'uploading'}
+                    className={`bg-white border border-gray-300 px-3 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm ${(zipUploadStatus === 'preparing' || zipUploadStatus === 'uploading') ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50 cursor-pointer'}`}
                   >
-                    <Upload className="w-4 h-4 mr-1.5" /> Module Specs
+                    {(zipUploadStatus === 'preparing' || zipUploadStatus === 'uploading') ? (
+                      <span className="inline-flex items-center">
+                        <span className="w-4 h-4 mr-1.5 rounded-full border-2 border-indigo-300 border-t-indigo-600 animate-spin" />
+                        {zipUploadStatus === 'preparing' ? 'Preparing…' : 'Uploading…'}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center"><Upload className="w-4 h-4 mr-1.5" /> Module Specs</span>
+                    )}
                   </button>
                   <input
                     ref={specsUploadInputRef}
@@ -728,6 +763,28 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                 Evaluation View
               </button>
             </div>
+
+            {(zipUploadStatus === 'preparing' || zipUploadStatus === 'uploading') && (
+              <div className="flex items-center gap-2 self-end">
+                {zipUploadStatus === 'uploading' ? (
+                  <div
+                    className="relative w-8 h-8 rounded-full"
+                    style={{ background: `conic-gradient(#4f46e5 ${zipUploadProgress}%, #e5e7eb ${zipUploadProgress}% 100%)` }}
+                  >
+                    <div className="absolute inset-[4px] rounded-full bg-white flex items-center justify-center text-[10px] font-semibold text-indigo-700">
+                      {zipUploadProgress}%
+                    </div>
+                  </div>
+                ) : (
+                  <span className="w-8 h-8 rounded-full border-2 border-indigo-300 border-t-indigo-600 animate-spin" />
+                )}
+                <p className="text-xs text-gray-600 max-w-[360px] truncate" title={zipUploadFileName || ''}>
+                  {zipUploadStatus === 'preparing'
+                    ? `Preparing ${zipUploadFileName || 'zip file'}…`
+                    : `Uploading ${zipUploadFileName || 'zip file'}… ${zipUploadProgress}%`}
+                </p>
+              </div>
+            )}
 
             <p className="text-xs text-gray-500 max-w-[520px] text-right truncate" title={specsZipMetaText}>
               {specsZipMetaText}

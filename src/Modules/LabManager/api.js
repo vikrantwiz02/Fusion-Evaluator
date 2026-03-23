@@ -152,10 +152,14 @@ export const fetchModuleSpecifications = async (moduleId) => {
   };
 };
 
-export const saveModuleSpecifications = async (moduleId, payload) => {
+export const saveModuleSpecifications = async (moduleId, payload, options = {}) => {
+  const uploadConfig = typeof options?.onUploadProgress === 'function'
+    ? { onUploadProgress: options.onUploadProgress }
+    : undefined;
+
   if (supportsSpecificationsEndpoint) {
     try {
-      const { data } = await api.put(`/modules/${moduleId}/specifications`, payload);
+      const { data } = await api.put(`/modules/${moduleId}/specifications`, payload, uploadConfig);
       return {
         useCases: Array.isArray(data?.useCases) ? data.useCases : [],
         workflows: Array.isArray(data?.workflows) ? data.workflows : [],
@@ -176,7 +180,7 @@ export const saveModuleSpecifications = async (moduleId, payload) => {
     spec_workflows: payload.workflows,
     spec_rules: payload.businessRules,
     spec_layout: payload.layout,
-  });
+  }, uploadConfig);
 
   return {
     useCases: Array.isArray(data?.spec_use_cases) ? data.spec_use_cases : [],
@@ -212,10 +216,14 @@ export const fetchTeamsModuleSpecifications = async (moduleId) => {
   };
 };
 
-export const saveTeamsModuleSpecifications = async (moduleId, payload) => {
+export const saveTeamsModuleSpecifications = async (moduleId, payload, options = {}) => {
+  const uploadConfig = typeof options?.onUploadProgress === 'function'
+    ? { onUploadProgress: options.onUploadProgress }
+    : undefined;
+
   if (supportsSpecificationsEndpoint) {
     try {
-      const { data } = await api.put(`/modules/${moduleId}/team-specifications`, payload);
+      const { data } = await api.put(`/modules/${moduleId}/team-specifications`, payload, uploadConfig);
       return {
         useCases: Array.isArray(data?.useCases) ? data.useCases : [],
         workflows: Array.isArray(data?.workflows) ? data.workflows : [],
@@ -236,12 +244,66 @@ export const saveTeamsModuleSpecifications = async (moduleId, payload) => {
     team_spec_workflows: payload.workflows,
     team_spec_rules: payload.businessRules,
     team_spec_layout: payload.layout,
-  });
+  }, uploadConfig);
 
   return {
     useCases: Array.isArray(data?.team_spec_use_cases) ? data.team_spec_use_cases : [],
     workflows: Array.isArray(data?.team_spec_workflows) ? data.team_spec_workflows : [],
     businessRules: Array.isArray(data?.team_spec_rules) ? data.team_spec_rules : [],
+    layout: data?.team_spec_layout && typeof data.team_spec_layout === 'object' && !Array.isArray(data.team_spec_layout) ? data.team_spec_layout : {},
+  };
+};
+
+export const uploadModuleSpecsZip = async (moduleId, moduleSpecsZip, options = {}) => {
+  const uploadConfig = typeof options?.onUploadProgress === 'function'
+    ? { onUploadProgress: options.onUploadProgress }
+    : undefined;
+
+  const payload = { moduleSpecsZip };
+
+  try {
+    const { data } = await api.put(`/modules/${moduleId}/specifications/zip`, payload, uploadConfig);
+    return {
+      layout: data?.layout && typeof data.layout === 'object' && !Array.isArray(data.layout) ? data.layout : {},
+    };
+  } catch (error) {
+    if (error?.response?.status !== 404) {
+      throw error;
+    }
+  }
+
+  const { data } = await api.put(`/modules/${moduleId}`, {
+    spec_layout: { moduleSpecsZip },
+  }, uploadConfig);
+
+  return {
+    layout: data?.spec_layout && typeof data.spec_layout === 'object' && !Array.isArray(data.spec_layout) ? data.spec_layout : {},
+  };
+};
+
+export const uploadTeamsModuleSpecsZip = async (moduleId, moduleSpecsZip, options = {}) => {
+  const uploadConfig = typeof options?.onUploadProgress === 'function'
+    ? { onUploadProgress: options.onUploadProgress }
+    : undefined;
+
+  const payload = { moduleSpecsZip };
+
+  try {
+    const { data } = await api.put(`/modules/${moduleId}/team-specifications/zip`, payload, uploadConfig);
+    return {
+      layout: data?.layout && typeof data.layout === 'object' && !Array.isArray(data.layout) ? data.layout : {},
+    };
+  } catch (error) {
+    if (error?.response?.status !== 404) {
+      throw error;
+    }
+  }
+
+  const { data } = await api.put(`/modules/${moduleId}`, {
+    team_spec_layout: { moduleSpecsZip },
+  }, uploadConfig);
+
+  return {
     layout: data?.team_spec_layout && typeof data.team_spec_layout === 'object' && !Array.isArray(data.team_spec_layout) ? data.team_spec_layout : {},
   };
 };

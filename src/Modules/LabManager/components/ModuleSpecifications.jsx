@@ -327,7 +327,6 @@ export default function ModuleSpecifications({
   const sectionOrderStorageKey = useMemo(() => `${storageKeyPrefix}-section-order:${moduleId}`, [storageKeyPrefix, moduleId]);
   const sectionColumnsStorageKey = useMemo(() => `${storageKeyPrefix}-section-columns:${moduleId}`, [storageKeyPrefix, moduleId]);
   const [sectionOrder, setSectionOrder] = useState(initialLayout.sectionOrder);
-  const [moduleSpecsZip, setModuleSpecsZip] = useState(initialLayout.moduleSpecsZip || null);
   const [tables, setTables] = useState({
     useCases: initialSections.useCases,
     workflows: initialSections.workflows,
@@ -377,7 +376,6 @@ export default function ModuleSpecifications({
       sectionColumns: Object.fromEntries(
         Object.keys(nextTables || {}).map(sectionKey => [sectionKey, preferredColumns[sectionKey] || []]),
       ),
-      moduleSpecsZip,
       extraSections: (nextExtraSections || []).map(section => ({
         key: section.key,
         label: section.label,
@@ -408,7 +406,6 @@ export default function ModuleSpecifications({
         nextColumnWidths,
         nextRowHeights,
       ),
-      moduleSpecsZip,
     });
   };
 
@@ -459,7 +456,6 @@ export default function ModuleSpecifications({
     setExtraSections(extraMeta);
     setSectionOrder(nextSectionOrder);
     sectionOrderRef.current = nextSectionOrder;
-    setModuleSpecsZip(nextLayout.moduleSpecsZip || null);
     setTables({
       ...nextTables,
       ...Object.fromEntries(nextLayout.extraSections.map(section => [section.key, section.rows])),
@@ -1095,7 +1091,7 @@ export default function ModuleSpecifications({
         sectionColumns: Object.fromEntries(
           Object.keys(normalizedSaved).map(sectionKey => [sectionKey, normalizedManualColumns[sectionKey] || []]),
         ),
-        moduleSpecsZip: savedLayout.moduleSpecsZip || moduleSpecsZip || null,
+        moduleSpecsZip: savedLayout.moduleSpecsZip || null,
       };
 
       const persistedSnapshot = snapshotToken || buildSnapshot(
@@ -1113,7 +1109,6 @@ export default function ModuleSpecifications({
       setExtraSections(nextExtraMeta);
       setSectionOrder(effectiveSectionOrder);
       sectionOrderRef.current = effectiveSectionOrder;
-      setModuleSpecsZip(mergedSavedLayout.moduleSpecsZip || null);
       setColumnWidths(savedLayout.columnWidths);
       setRowHeights(savedLayout.rowHeights);
       onSaved?.({ ...normalizedSaved, layout: mergedSavedLayout });
