@@ -12,12 +12,14 @@ import prisma from './lib/db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '200mb';
 
 // Security headers (helmet sets X-Content-Type-Options, HSTS, etc.)
 // Preserve COOP header required for Google OAuth popup
 app.use(helmet({ crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }));
 app.use(corsMiddleware);
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: requestBodyLimit }));
+app.use(express.urlencoded({ limit: requestBodyLimit, extended: true }));
 
 // API routes
 app.use('/api/lab-manager', routes);

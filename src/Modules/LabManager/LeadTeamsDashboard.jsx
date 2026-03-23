@@ -72,7 +72,7 @@ export default function LeadTeamsDashboard({ moduleId, user, onBack }) {
 
   const specsZipMetaText = useMemo(() => {
     const zip = moduleData?.team_spec_layout?.moduleSpecsZip;
-    if (!zip?.name) return 'No Module Specs zip uploaded yet.';
+    if (!zip?.name || !zip?.dataUrl) return 'No Module Specs zip uploaded yet.';
 
     const uploadedAt = zip.uploadedAt ? new Date(zip.uploadedAt) : null;
     const when = uploadedAt && !Number.isNaN(uploadedAt.getTime())

@@ -241,18 +241,6 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         dataUrl,
       };
 
-      // Optimistically keep zip metadata available for immediate download clicks.
-      setModuleData(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          spec_layout: {
-            ...(prev.spec_layout && typeof prev.spec_layout === 'object' && !Array.isArray(prev.spec_layout) ? prev.spec_layout : {}),
-            moduleSpecsZip: nextZip,
-          },
-        };
-      });
-
       const saved = await saveModuleSpecifications(moduleId, {
         useCases: moduleSpecificationsData.useCases,
         workflows: moduleSpecificationsData.workflows,
@@ -604,7 +592,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
 
   const specsZipMetaText = useMemo(() => {
     const zip = moduleData?.spec_layout?.moduleSpecsZip;
-    if (!zip?.name) return 'No Module Specs zip uploaded yet.';
+    if (!zip?.name || !zip?.dataUrl) return 'No Module Specs zip uploaded yet.';
 
     const uploadedAt = zip.uploadedAt ? new Date(zip.uploadedAt) : null;
     const when = uploadedAt && !Number.isNaN(uploadedAt.getTime())
