@@ -252,7 +252,7 @@ export default function LeadTeamsDashboard({ moduleId, user, onBack }) {
                 <Download className="w-4 h-4 mr-1.5" /> Download Module Specs
               </button>
               <span className="text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white text-gray-600">
-                {specAutoSaveStatus === 'saving' ? 'Auto-saving...' : specAutoSaveStatus === 'saved' ? 'Auto-saved' : 'Auto-save on'}
+                {specAutoSaveStatus === 'saving' ? 'Saving...' : specAutoSaveStatus === 'saved' ? 'Saved' : 'Manual save'}
               </span>
             </div>
 
@@ -293,7 +293,7 @@ export default function LeadTeamsDashboard({ moduleId, user, onBack }) {
             initialData={moduleSpecificationsData}
             onSaved={handleSpecificationsSaved}
             onAutoSaveStatusChange={handleSpecAutoSaveStatus}
-            autoSave={canEditSpecifications}
+            autoSave={false}
             saveSpecifications={saveTeamsModuleSpecifications}
             storageKeyPrefix="teams-module-spec"
           />

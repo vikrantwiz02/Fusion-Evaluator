@@ -315,6 +315,8 @@ export default function ModuleSpecifications({
   initialSection = 'useCases',
   onSaved,
   onAutoSaveStatusChange,
+  onDirtyStateChange,
+  onRegisterSaveHandler,
   drawerMode = false,
   autoSave = false,
   saveSpecifications = saveModuleSpecifications,
@@ -362,6 +364,7 @@ export default function ModuleSpecifications({
   const hasAutoSaveInitializedRef = useRef(false);
   const autoSaveTimerRef = useRef(null);
   const lastPersistedSnapshotRef = useRef('');
+  const [persistedSnapshotToken, setPersistedSnapshotToken] = useState('');
   const tableScrollRef = useRef(null);
   const wasResizingRef = useRef(false);
 
@@ -507,11 +510,39 @@ export default function ModuleSpecifications({
       nextLayout.columnWidths,
       nextLayout.rowHeights,
     );
+    setPersistedSnapshotToken(lastPersistedSnapshotRef.current);
     hasAutoSaveInitializedRef.current = false;
 
     const validSections = new Set([...BASE_SECTIONS.map(section => section.key), ...extraMeta.map(section => section.key)]);
     setActiveSection(prev => (validSections.has(prev) ? prev : initialSection));
   }, [initialSections, initialData, initialSection, sectionOrderStorageKey, sectionColumnsStorageKey]);
+
+  const currentSnapshot = useMemo(
+    () => buildSnapshot(tables, manualColumns, extraSections, sectionOrder, columnWidths, rowHeights),
+    [tables, manualColumns, extraSections, sectionOrder, columnWidths, rowHeights],
+  );
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (!isAdmin) return false;
+    if (!persistedSnapshotToken) return false;
+    return currentSnapshot !== persistedSnapshotToken;
+  }, [isAdmin, currentSnapshot, persistedSnapshotToken]);
+
+  useEffect(() => {
+    onDirtyStateChange?.(hasUnsavedChanges);
+  }, [hasUnsavedChanges, onDirtyStateChange]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -665,9 +696,10 @@ export default function ModuleSpecifications({
   useEffect(() => {
     if (resizeDrag || !wasResizingRef.current || !isAdmin) return;
     wasResizingRef.current = false;
+    if (!autoSave) return;
     const preferredColumns = buildPreferredColumns(columnsBySection, tables);
     persistTables(tables, preferredColumns);
-  }, [resizeDrag]);
+  }, [resizeDrag, autoSave, isAdmin, columnsBySection, tables]);
 
   const startColumnResize = (column, event) => {
     if (!isAdmin) return;
@@ -748,13 +780,13 @@ export default function ModuleSpecifications({
     }));
   };
 
-  const buildPreferredColumns = (nextManual = manualColumns, nextTables = tables) => {
+  function buildPreferredColumns(nextManual = manualColumns, nextTables = tables) {
     const out = {};
     Object.keys(nextTables || {}).forEach(sectionKey => {
       out[sectionKey] = [...(nextManual?.[sectionKey] || [])];
     });
     return out;
-  };
+  }
 
   const openAddSectionDialog = () => {
     if (!isAdmin) return;
@@ -795,7 +827,9 @@ export default function ModuleSpecifications({
     setManualColumns(nextManualColumns);
     setActiveSection(nextKey);
     setSectionDialog({ open: false, value: '' });
-    await persistTables(nextTables, preferredColumns, nextExtraSections, nextSectionOrder);
+    if (autoSave) {
+      await persistTables(nextTables, preferredColumns, nextExtraSections, nextSectionOrder);
+    }
   };
 
   const addRow = () => {
@@ -870,7 +904,9 @@ export default function ModuleSpecifications({
     setTables(nextTables);
 
     setActiveCell(null);
-    await persistTables(nextTables, preferredColumns);
+    if (autoSave) {
+      await persistTables(nextTables, preferredColumns);
+    }
   };
 
   const deleteActiveColumn = async () => {
@@ -898,7 +934,9 @@ export default function ModuleSpecifications({
     setManualColumns(nextManualColumns);
 
     setActiveCell(null);
-    await persistTables(nextTables, preferredColumns);
+    if (autoSave) {
+      await persistTables(nextTables, preferredColumns);
+    }
   };
 
   const deleteCurrentSection = async () => {
@@ -920,7 +958,9 @@ export default function ModuleSpecifications({
       setManualColumns(nextManualColumns);
       setActiveCell(null);
       setActiveSection('useCases');
-      await persistTables(nextTables, preferredColumns, nextExtraSections, nextSectionOrder);
+      if (autoSave) {
+        await persistTables(nextTables, preferredColumns, nextExtraSections, nextSectionOrder);
+      }
       return;
     }
 
@@ -940,7 +980,9 @@ export default function ModuleSpecifications({
     setTables(nextTables);
     setManualColumns(nextManualColumns);
     setActiveCell(null);
-    await persistTables(nextTables, preferredColumns);
+    if (autoSave) {
+      await persistTables(nextTables, preferredColumns);
+    }
   };
 
   const openAddHeaderDialog = () => {
@@ -973,17 +1015,30 @@ export default function ModuleSpecifications({
         return;
       }
 
+      const activeColumn = activeCell?.section === activeSection ? activeCell.col : null;
+      const anchorIndex = activeColumn ? currentColumns.indexOf(activeColumn) : -1;
+      const insertAt = anchorIndex >= 0 ? anchorIndex + 1 : currentColumns.length;
+      const nextColumns = [...currentColumns];
+      nextColumns.splice(insertAt, 0, value);
+
       setManualColumns(prev => ({
         ...prev,
-        [activeSection]: [...prev[activeSection], value],
+        [activeSection]: nextColumns,
       }));
 
       setTables(prev => ({
         ...prev,
-        [activeSection]: prev[activeSection].map(row => ({
-          ...row,
-          [value]: row?.[value] ?? '',
-        })),
+        [activeSection]: prev[activeSection].map(row => {
+          const nextRow = {};
+          nextColumns.forEach((col) => {
+            if (col === value) {
+              nextRow[col] = row?.[col] ?? '';
+            } else {
+              nextRow[col] = row?.[col] ?? '';
+            }
+          });
+          return nextRow;
+        }),
       }));
 
       if ((currentRows || []).length > 0) {
@@ -1103,6 +1158,7 @@ export default function ModuleSpecifications({
         savedLayout.rowHeights,
       );
       lastPersistedSnapshotRef.current = persistedSnapshot;
+      setPersistedSnapshotToken(persistedSnapshot);
 
       setTables(normalizedSaved);
       setManualColumns(normalizedManualColumns);
@@ -1125,8 +1181,14 @@ export default function ModuleSpecifications({
   const handleSaveAll = async () => {
     if (!isAdmin) return;
     const preferredColumns = buildPreferredColumns(columnsBySection, tables);
-    await persistTables(tables, preferredColumns);
+    return persistTables(tables, preferredColumns);
   };
+
+  useEffect(() => {
+    if (!onRegisterSaveHandler) return;
+    onRegisterSaveHandler(handleSaveAll);
+    return () => onRegisterSaveHandler(null);
+  }, [onRegisterSaveHandler, handleSaveAll]);
 
   const handleTabDragStart = (sectionKey, event) => {
     if (!isAdmin) return;
@@ -1161,11 +1223,14 @@ export default function ModuleSpecifications({
     setDraggedSectionKey('');
 
     const preferredColumns = buildPreferredColumns(columnsBySection, tables);
-    await persistTables(tables, preferredColumns, extraSections, nextSectionOrder);
+    if (autoSave) {
+      await persistTables(tables, preferredColumns, extraSections, nextSectionOrder);
+    }
   };
 
   const rootHeightClass = 'h-full';
   const showManualControls = isAdmin && !(drawerMode && autoSave);
+  const showEmbeddedSaveButton = !drawerMode;
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden ${rootHeightClass} ${drawerMode ? 'rounded-none border-0 border-l' : ''}`}>
@@ -1204,8 +1269,8 @@ export default function ModuleSpecifications({
         </div>
 
         {showManualControls && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
+          <div className={`${drawerMode ? 'flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1' : 'flex items-center gap-2 flex-wrap'}`}>
+            <div className="flex items-center gap-2 flex-shrink-0">
               <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-700 cursor-pointer hover:bg-gray-50">
                 <Upload className="w-4 h-4" /> Upload Excel
                 <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleUploadWorkbook} />
@@ -1226,9 +1291,9 @@ export default function ModuleSpecifications({
               </button>
             </div>
 
-            <div className="h-6 w-px bg-gray-300" />
+            <div className="h-6 w-px bg-gray-300 flex-shrink-0" />
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 type="button"
                 onClick={deleteActiveRow}
@@ -1255,21 +1320,25 @@ export default function ModuleSpecifications({
               </button>
             </div>
 
-            <div className="h-6 w-px bg-gray-300" />
+            {showEmbeddedSaveButton && (
+              <>
+                <div className="h-6 w-px bg-gray-300" />
 
-            <button
-              type="button"
-              onClick={handleSaveAll}
-              disabled={isSaving}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-white text-sm disabled:opacity-60 ${saveJustNow ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-            >
-              <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : saveJustNow ? 'Saved' : 'Save All'}
-            </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAll}
+                  disabled={isSaving}
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-white text-sm disabled:opacity-60 ${saveJustNow ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                >
+                  <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : saveJustNow ? 'Saved' : 'Save All'}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {isAdmin && (
+      {isAdmin && !drawerMode && (
         <div className="px-4 py-2 border-b border-gray-200 bg-white flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">Format</span>
           <button

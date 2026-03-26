@@ -21,7 +21,7 @@ import FeatureList from './components/FeatureList';
 import ModuleSpecifications from './components/ModuleSpecifications';
 import {
   ArrowLeft, Plus, Trash2, Code2, Link as LinkIcon, CheckCircle2, XCircle,
-  Copy, Server, Layout, Edit2, Search, FolderOpen, ChevronDown, ChevronRight, Upload, Download,
+  Copy, Server, Layout, Edit2, Search, FolderOpen, ChevronDown, ChevronRight, Upload, Download, Save,
 } from 'lucide-react';
 
 // ── Sidebar helpers ────────────────────────────────────────────────────────────
@@ -183,10 +183,20 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const [zipUploadStatus, setZipUploadStatus] = useState('idle');
   const [zipUploadProgress, setZipUploadProgress] = useState(0);
   const [zipUploadFileName, setZipUploadFileName] = useState('');
+  const [specHasUnsavedChanges, setSpecHasUnsavedChanges] = useState(false);
+  const [specPanelSaving, setSpecPanelSaving] = useState(false);
+  const [sidebarPeekOpen, setSidebarPeekOpen] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [leaveReason, setLeaveReason] = useState('leave this page');
   const [toast, setToast] = useState({ open: false, type: 'info', message: '' });
   const specsUploadInputRef = useRef(null);
   const toastTimerRef = useRef(null);
-  const sidebarCollapsed = primaryView === 'specifications' || (primaryView === 'evaluation' && sideBySide);
+  const specsSaveHandlerRef = useRef(null);
+  const pendingLeaveActionRef = useRef(null);
+  const skipNextPopGuardRef = useRef(false);
+  const historyGuardActiveRef = useRef(false);
+  const hoverPeekMode = primaryView === 'evaluation' && sideBySide;
+  const sidebarCollapsed = hoverPeekMode ? !sidebarPeekOpen : false;
 
   const showToast = useCallback((type, message) => {
     setToast({ open: true, type, message });
@@ -208,11 +218,132 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     setPrimaryView('specifications');
   };
 
-  const openEvaluationView = () => {
-    // Evaluation tab should show sidebar by default; user can still hide it using Side-by-Side.
-    setPrimaryView('evaluation');
-    setSideBySide(false);
+  const requestSpecLeave = useCallback((action, reason = 'leave this view') => {
+    if (!specHasUnsavedChanges) {
+      action?.();
+      return;
+    }
+    pendingLeaveActionRef.current = action;
+    setLeaveReason(reason);
+    setLeaveConfirmOpen(true);
+  }, [specHasUnsavedChanges]);
+
+  const closeLeaveConfirm = useCallback(() => {
+    setLeaveConfirmOpen(false);
+    pendingLeaveActionRef.current = null;
+  }, []);
+
+  const proceedAfterLeaveChoice = useCallback(() => {
+    const action = pendingLeaveActionRef.current;
+    closeLeaveConfirm();
+    action?.();
+  }, [closeLeaveConfirm]);
+
+  const handleSaveAndContinue = useCallback(async () => {
+    const saveHandler = specsSaveHandlerRef.current;
+    if (!saveHandler) {
+      showToast('error', 'Save handler is not available. Please try again.');
+      return;
+    }
+    const saved = await saveHandler();
+    if (!saved) {
+      showToast('error', 'Could not save changes. Please resolve and try again.');
+      return;
+    }
+    setSpecHasUnsavedChanges(false);
+    proceedAfterLeaveChoice();
+  }, [showToast, proceedAfterLeaveChoice]);
+
+  const handleDiscardAndContinue = useCallback(() => {
+    setSpecHasUnsavedChanges(false);
+    proceedAfterLeaveChoice();
+  }, [proceedAfterLeaveChoice]);
+
+  const openEvaluationView = async () => {
+    requestSpecLeave(() => {
+      // Evaluation tab should show sidebar by default; user can still hide it using Side-by-Side.
+      setPrimaryView('evaluation');
+      setSideBySide(false);
+    }, 'switching to Evaluation View');
   };
+
+  const handlePairSelection = async (groupId) => {
+    if (groupId === selectedGroupId) return;
+    if (primaryView === 'specifications') {
+      requestSpecLeave(() => setSelectedGroupId(groupId), 'switching active pair');
+      return;
+    }
+    setSelectedGroupId(groupId);
+  };
+
+  const handleBackWithGuard = async () => {
+    requestSpecLeave(() => onBack?.(), 'going back to Modules');
+  };
+
+  const registerSpecsSaveHandler = useCallback((handler) => {
+    specsSaveHandlerRef.current = handler;
+  }, []);
+
+  const handlePanelSave = useCallback(async () => {
+    const saveHandler = specsSaveHandlerRef.current;
+    if (!saveHandler) {
+      showToast('error', 'Save handler is not available.');
+      return;
+    }
+    setSpecPanelSaving(true);
+    try {
+      const saved = await saveHandler();
+      if (!saved) {
+        showToast('error', 'Save failed. Please check and try again.');
+        return;
+      }
+      showToast('success', 'Module specifications saved.');
+    } finally {
+      setSpecPanelSaving(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!specHasUnsavedChanges) return undefined;
+
+    const onBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [specHasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!specHasUnsavedChanges) {
+      historyGuardActiveRef.current = false;
+      return undefined;
+    }
+
+    if (!historyGuardActiveRef.current) {
+      window.history.pushState({ __specGuard: true }, '', window.location.href);
+      historyGuardActiveRef.current = true;
+    }
+
+    const onPopState = () => {
+      if (skipNextPopGuardRef.current) {
+        skipNextPopGuardRef.current = false;
+        return;
+      }
+
+      requestSpecLeave(() => {
+        skipNextPopGuardRef.current = true;
+        window.history.back();
+      }, 'using browser back/forward navigation');
+
+      // Keep the current route active until user confirms save/discard.
+      window.history.pushState({ __specGuard: true }, '', window.location.href);
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [specHasUnsavedChanges, requestSpecLeave]);
 
   const triggerSpecsZipUpload = () => {
     if (!canEditSpecifications) return;
@@ -595,14 +726,17 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const selectedGroup = allGroups.find(g => g.id === selectedGroupId);
   const canMovePairs = isAdmin;
 
-  const moduleSpecificationsData = useMemo(() => ({
-    useCases: Array.isArray(moduleData?.spec_use_cases) ? moduleData.spec_use_cases : [],
-    workflows: Array.isArray(moduleData?.spec_workflows) ? moduleData.spec_workflows : [],
-    businessRules: Array.isArray(moduleData?.spec_rules) ? moduleData.spec_rules : [],
-    layout: moduleData?.spec_layout && typeof moduleData.spec_layout === 'object' && !Array.isArray(moduleData.spec_layout)
-      ? moduleData.spec_layout
-      : {},
-  }), [moduleData]);
+  const selectedPairSpecifications = useMemo(() => {
+    const raw = selectedGroup?.evaluation?.module_specifications;
+    return {
+      useCases: Array.isArray(raw?.useCases) ? raw.useCases : [],
+      workflows: Array.isArray(raw?.workflows) ? raw.workflows : [],
+      businessRules: Array.isArray(raw?.businessRules) ? raw.businessRules : [],
+      layout: raw?.layout && typeof raw.layout === 'object' && !Array.isArray(raw.layout)
+        ? raw.layout
+        : {},
+    };
+  }, [selectedGroup]);
 
   const specsZipMetaText = useMemo(() => {
     const zip = moduleData?.spec_layout?.moduleSpecsZip;
@@ -622,20 +756,74 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     return `Stored zip: ${zip.name} (${when})`;
   }, [moduleData?.spec_layout?.moduleSpecsZip]);
 
-  const handleSpecificationsSaved = (saved) => {
+  const activePairMetaText = useMemo(() => {
+    if (!selectedGroup) return 'No active pair selected';
+    const divisionName = selectedGroup.division_id
+      ? (divisions.find(d => d.id === selectedGroup.division_id)?.name || 'Division')
+      : 'Ungrouped';
+    return `Active Pair: ${divisionName} / ${selectedGroup.pair_id}`;
+  }, [selectedGroup, divisions]);
+
+  const savePairSpecifications = useCallback(async (_targetId, payload) => {
+    if (!selectedGroupId) {
+      throw new Error('Select a pair to save module specifications');
+    }
+
+    const clean = {
+      useCases: Array.isArray(payload?.useCases) ? payload.useCases : [],
+      workflows: Array.isArray(payload?.workflows) ? payload.workflows : [],
+      businessRules: Array.isArray(payload?.businessRules) ? payload.businessRules : [],
+      layout: payload?.layout && typeof payload.layout === 'object' && !Array.isArray(payload.layout)
+        ? payload.layout
+        : {},
+    };
+
+    const result = await updateEvaluation(moduleId, selectedGroupId, {
+      module_specifications: clean,
+    });
+
+    const savedSpec = result?.evaluation?.module_specifications || clean;
+    return {
+      useCases: Array.isArray(savedSpec?.useCases) ? savedSpec.useCases : [],
+      workflows: Array.isArray(savedSpec?.workflows) ? savedSpec.workflows : [],
+      businessRules: Array.isArray(savedSpec?.businessRules) ? savedSpec.businessRules : [],
+      layout: savedSpec?.layout && typeof savedSpec.layout === 'object' && !Array.isArray(savedSpec.layout)
+        ? savedSpec.layout
+        : {},
+    };
+  }, [moduleId, selectedGroupId]);
+
+  const handleSpecificationsSaved = useCallback((saved) => {
+    if (!selectedGroupId) return;
+
+    const normalized = {
+      useCases: Array.isArray(saved?.useCases) ? saved.useCases : [],
+      workflows: Array.isArray(saved?.workflows) ? saved.workflows : [],
+      businessRules: Array.isArray(saved?.businessRules) ? saved.businessRules : [],
+      layout: saved?.layout && typeof saved.layout === 'object' && !Array.isArray(saved.layout)
+        ? saved.layout
+        : {},
+    };
+
     setModuleData(prev => {
       if (!prev) return prev;
       return {
         ...prev,
-        spec_use_cases: saved.useCases,
-        spec_workflows: saved.workflows,
-        spec_rules: saved.businessRules,
-        spec_layout: saved.layout && typeof saved.layout === 'object' && !Array.isArray(saved.layout)
-          ? saved.layout
-          : {},
+        groups: Array.isArray(prev.groups)
+          ? prev.groups.map(group => {
+            if (group.id !== selectedGroupId) return group;
+            return {
+              ...group,
+              evaluation: {
+                ...(group.evaluation && typeof group.evaluation === 'object' ? group.evaluation : {}),
+                module_specifications: normalized,
+              },
+            };
+          })
+          : prev.groups,
       };
     });
-  };
+  }, [selectedGroupId]);
 
   // ── Render guards ─────────────────────────────────────────────────────────────
 
@@ -667,7 +855,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             {onBack && (
-              <button onClick={onBack} className="flex items-center text-sm text-indigo-600 hover:text-indigo-800 mb-1 transition-colors cursor-pointer">
+              <button onClick={() => { void handleBackWithGuard(); }} className="flex items-center text-sm text-indigo-600 hover:text-indigo-800 mb-1 transition-colors cursor-pointer">
                 <ArrowLeft className="w-4 h-4 mr-1" /> Back to Modules
               </button>
             )}
@@ -773,18 +961,38 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
               </div>
             )}
 
-            <p className="text-xs text-gray-500 max-w-[520px] text-right truncate" title={specsZipMetaText}>
-              {specsZipMetaText}
-            </p>
+            <div className="flex flex-wrap justify-end items-center gap-2">
+              <span className="text-[11px] px-2 py-1 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 max-w-[360px] truncate" title={activePairMetaText}>
+                {activePairMetaText}
+              </span>
+              <p className="text-xs text-gray-500 max-w-[520px] text-right truncate" title={specsZipMetaText}>
+                {specsZipMetaText}
+              </p>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden">
+
+        {hoverPeekMode && sidebarCollapsed && (
+          <div
+            className="absolute left-0 top-0 h-full w-2 z-20 cursor-ew-resize"
+            onMouseEnter={() => setSidebarPeekOpen(true)}
+            title="Hover to view pairs"
+          />
+        )}
 
         {/* Sidebar */}
-        <div className={`${sidebarCollapsed ? 'w-0 border-r-0' : 'w-80 border-r border-gray-200'} bg-white flex flex-col shrink-0 overflow-hidden transition-all duration-300`}>
+        <div
+          className={`${sidebarCollapsed ? 'w-0 border-r-0' : 'w-80 border-r border-gray-200'} bg-white flex flex-col shrink-0 overflow-hidden transition-all duration-300`}
+          onMouseLeave={() => {
+            if (hoverPeekMode) {
+              setSidebarPeekOpen(false);
+            }
+          }}
+        >
           <div className="p-4 border-b border-gray-100">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -811,7 +1019,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                   pairs={pairs}
                   isAdmin={isAdmin}
                   selectedGroupId={selectedGroupId}
-                  onSelectGroup={setSelectedGroupId}
+                  onSelectGroup={(groupId) => { void handlePairSelection(groupId); }}
                   onAddPair={openAddPairModal}
                   onRename={openRenameDivision}
                   onDelete={confirmDeleteDivision}
@@ -856,7 +1064,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                       key={group.id}
                       group={group}
                       selected={selectedGroupId === group.id}
-                      onClick={() => setSelectedGroupId(group.id)}
+                      onClick={() => { void handlePairSelection(group.id); }}
                       draggable={canMovePairs}
                       onDragStart={() => handlePairDragStart(group.id)}
                       onDragEnd={handlePairDragEnd}
@@ -882,18 +1090,31 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
 
           {primaryView === 'specifications' ? (
             <div className="w-full h-full min-h-0">
-              <ModuleSpecifications
-                moduleId={moduleId}
-                isAdmin={canEditSpecifications}
-                initialData={moduleSpecificationsData}
-                onSaved={handleSpecificationsSaved}
-                onAutoSaveStatusChange={handleSpecAutoSaveStatus}
-                autoSave={canEditSpecifications}
-              />
+              {selectedGroup ? (
+                <div className="w-full h-full min-h-0">
+                  <ModuleSpecifications
+                    key={`pair-spec-${selectedGroup.id}`}
+                    moduleId={selectedGroup.id}
+                    isAdmin={canEditSpecifications}
+                    initialData={selectedPairSpecifications}
+                    onSaved={handleSpecificationsSaved}
+                    onAutoSaveStatusChange={handleSpecAutoSaveStatus}
+                    onDirtyStateChange={setSpecHasUnsavedChanges}
+                    onRegisterSaveHandler={registerSpecsSaveHandler}
+                    autoSave={false}
+                    saveSpecifications={savePairSpecifications}
+                    storageKeyPrefix={`pair-module-spec-${selectedGroup.id}`}
+                  />
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-gray-500">
+                  Select a pair from the sidebar to view its module specifications.
+                </div>
+              )}
             </div>
           ) : (
             <>
-              <div className={`transition-all duration-300 ${sideBySide ? 'h-full overflow-y-auto pr-[35%]' : ''}`}>
+              <div className={`transition-all duration-300 ${sideBySide && !sidebarPeekOpen ? 'h-full overflow-y-auto pr-[35%]' : 'h-full overflow-y-auto'}`}>
           {selectedGroup ? (
             <div className="max-w-5xl mx-auto space-y-6">
 
@@ -1052,7 +1273,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
               </div>
 
               <aside
-                className={`absolute top-0 right-0 h-full w-[35%] bg-gray-50 border-l border-gray-200 transition-transform duration-300 ${sideBySide ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
+                className={`absolute top-0 right-0 h-full w-[35%] bg-gray-50 border-l border-gray-200 transition-transform duration-300 ${sideBySide && !sidebarPeekOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}`}
               >
                 <div className="h-full p-4">
                   <div className="h-full flex flex-col bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1060,9 +1281,14 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                       <h3 className="text-sm font-semibold text-gray-800">Module Specifications (Editable)</h3>
                       <div className="flex items-center gap-2">
                         {canEditSpecifications && (
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${specAutoSaveStatus === 'saving' ? 'bg-amber-50 text-amber-700 border-amber-200' : specAutoSaveStatus === 'saved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-                            {specAutoSaveStatus === 'saving' ? 'Auto-saving...' : specAutoSaveStatus === 'saved' ? 'Auto-saved' : 'Auto-save on'}
-                          </span>
+                          <button
+                            onClick={() => { void handlePanelSave(); }}
+                            disabled={specPanelSaving}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border whitespace-nowrap shadow-sm ${specPanelSaving ? 'bg-amber-50 text-amber-700 border-amber-200 cursor-wait' : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 cursor-pointer'}`}
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            {specPanelSaving ? 'Saving...' : 'Save'}
+                          </button>
                         )}
                         <button
                           onClick={() => setSideBySide(false)}
@@ -1073,15 +1299,26 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
                       </div>
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      <ModuleSpecifications
-                        moduleId={moduleId}
-                        isAdmin={canEditSpecifications}
-                        initialData={moduleSpecificationsData}
-                        onSaved={handleSpecificationsSaved}
-                        onAutoSaveStatusChange={handleSpecAutoSaveStatus}
-                        autoSave={canEditSpecifications}
-                        drawerMode
-                      />
+                      {selectedGroup ? (
+                        <ModuleSpecifications
+                          key={`pair-spec-drawer-${selectedGroup.id}`}
+                          moduleId={selectedGroup.id}
+                          isAdmin={canEditSpecifications}
+                          initialData={selectedPairSpecifications}
+                          onSaved={handleSpecificationsSaved}
+                          onAutoSaveStatusChange={handleSpecAutoSaveStatus}
+                          onDirtyStateChange={setSpecHasUnsavedChanges}
+                          onRegisterSaveHandler={registerSpecsSaveHandler}
+                          autoSave={false}
+                          saveSpecifications={savePairSpecifications}
+                          storageKeyPrefix={`pair-module-spec-${selectedGroup.id}`}
+                          drawerMode
+                        />
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-sm text-gray-500 px-4 text-center">
+                          Select a pair to edit module specifications.
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1166,6 +1403,33 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         onConfirm={handleDeleteDivision}
         onCancel={() => { setDeleteDivisionConfirmOpen(false); setDivisionToDelete(null); }}
       />
+
+      {leaveConfirmOpen && (
+        <div className="fixed inset-0 z-[120] bg-black/45 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h3 className="text-base font-semibold text-slate-900">Save changes before leaving?</h3>
+              <p className="text-sm text-slate-600 mt-1">
+                You have unsaved Module Specifications changes while {leaveReason}.
+              </p>
+            </div>
+            <div className="px-5 py-4 flex items-center justify-end gap-2 bg-slate-50">
+              <button
+                onClick={handleDiscardAndContinue}
+                className="px-3.5 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 bg-white hover:bg-slate-100"
+              >
+                Discard
+              </button>
+              <button
+                onClick={() => { void handleSaveAndContinue(); }}
+                className="px-3.5 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+              >
+                Save and Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
