@@ -7,29 +7,32 @@ datasource db {
 }
 
 model Module {
-  id              String          @id @default(uuid())
-  name            String
-  date            String          @default("")
-  assigned_leads  String[]        @default([])
-  assigned_teams  String[]        @default([])
-  access_start    DateTime?
-  access_end      DateTime?
-  team_access_start DateTime?
-  team_access_end DateTime?
-  has_backend     Boolean         @default(true)
-  has_frontend    Boolean         @default(true)
-  spec_use_cases  Json            @default("[]")
-  spec_workflows  Json            @default("[]")
-  spec_rules      Json            @default("[]")
-  spec_layout     Json            @default("{}")
-  team_spec_use_cases Json        @default("[]")
-  team_spec_workflows Json        @default("[]")
-  team_spec_rules Json            @default("[]")
-  team_spec_layout Json           @default("{}")
-  groups          Group[]
-  divisions       GroupDivision[]
-  created_at      DateTime        @default(now())
-  updated_at      DateTime        @updatedAt
+  id                  String          @id @default(uuid())
+  name                String
+  date                String          @default("")
+  assigned_leads      String[]        @default([])
+  has_backend         Boolean         @default(true)
+  has_frontend        Boolean         @default(true)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @updatedAt
+  access_end          DateTime?
+  access_start        DateTime?
+  spec_rules          Json            @default("[]")
+  spec_use_cases      Json            @default("[]")
+  spec_workflows      Json            @default("[]")
+  spec_layout         Json            @default("{}")
+  team_spec_use_cases Json            @default("[]")
+  team_spec_workflows Json            @default("[]")
+  team_spec_rules     Json            @default("[]")
+  team_spec_layout    Json            @default("{}")
+  assigned_teams      String[]        @default([])
+  team_access_start   DateTime?
+  team_access_end     DateTime?
+  is_archived         Boolean         @default(false)
+  notes               String          @default("")
+  activity_logs       activity_logs[]
+  divisions           GroupDivision[]
+  groups              Group[]
 
   @@map("modules")
 }
@@ -37,11 +40,11 @@ model Module {
 model GroupDivision {
   id         String   @id @default(uuid())
   module_id  String
-  module     Module   @relation(fields: [module_id], references: [id], onDelete: Cascade)
   name       String
-  pairs      Group[]
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+  module     Module   @relation(fields: [module_id], references: [id], onDelete: Cascade)
+  pairs      Group[]
 
   @@unique([module_id, name])
   @@map("group_divisions")
@@ -50,30 +53,34 @@ model GroupDivision {
 model Group {
   id              String         @id @default(uuid())
   module_id       String
-  module          Module         @relation(fields: [module_id], references: [id], onDelete: Cascade)
-  division_id     String?
-  division        GroupDivision? @relation(fields: [division_id], references: [id], onDelete: SetNull)
   pair_id         String
   roll_numbers    String[]       @default([])
+  domain_leads    String[]       @default([])
   category        String         @default("CONV")
   is_merged       Boolean        @default(false)
   partner_pair_id String?
   evaluation      Json           @default("{}")
   created_at      DateTime       @default(now())
+  division_id     String?
+  is_submitted    Boolean        @default(false)
+  division        GroupDivision? @relation(fields: [division_id], references: [id])
+  module          Module         @relation(fields: [module_id], references: [id], onDelete: Cascade)
 
+  @@unique([module_id, pair_id])
+  @@index([module_id])
   @@map("groups")
 }
 
 model User {
-  id             Int      @id @default(autoincrement())
-  email          String   @unique
-  role           String   @default("lead")
-  name           String   @default("")
-  picture        String   @default("")
-  google_subject String   @default("")
+  id             Int       @id @default(autoincrement())
+  email          String    @unique
+  role           String    @default("lead")
+  name           String    @default("")
+  picture        String    @default("")
+  google_subject String    @default("")
   last_login_at  DateTime?
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
 
   @@map("users")
 }
@@ -86,4 +93,17 @@ model Admin {
   updated_at DateTime @updatedAt
 
   @@map("admins")
+}
+
+model activity_logs {
+  id          String   @id
+  module_id   String
+  actor_email String
+  actor_role  String
+  action      String
+  detail      String   @default("")
+  created_at  DateTime @default(now())
+  modules     Module   @relation(fields: [module_id], references: [id], onDelete: Cascade)
+
+  @@index([module_id])
 }

@@ -70,10 +70,10 @@ function fromDatetimeLocal(value) {
 }
 
 const STATUS_CLASSES = {
-  gray:  'bg-gray-100 text-gray-600',
-  blue:  'bg-blue-100 text-blue-700',
+  gray: 'bg-gray-100 text-gray-600',
+  blue: 'bg-blue-100 text-blue-700',
   green: 'bg-emerald-100 text-emerald-700',
-  red:   'bg-red-100 text-red-600',
+  red: 'bg-red-100 text-red-600',
 };
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -347,7 +347,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
     const headers = [
       'Module ID', 'Module Name', 'Date',
       'Lead Access Start', 'Lead Access End', 'Teams Access Start', 'Teams Access End', 'Has Backend', 'Has Frontend', 'Assigned Leads', 'Teams',
-      'Group ID', 'Pair ID', 'Roll Numbers', 'Category', 'Is Merged', 'Partner Pair ID',
+      'Group ID', 'Pair ID', 'Assigned Domain Lead Roll No.', 'Roll Numbers', 'Category', 'Is Merged', 'Partner Pair ID',
       'Overall Status', 'Backend Files', 'Backend API Endpoints', 'Backend Functions',
       'Backend Architecture Match', 'Backend Architecture Note',
       'Frontend Files', 'Frontend Endpoints Integrated',
@@ -371,7 +371,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
       ];
 
       if (groups.length === 0) {
-        csv += [...rowBase, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', mod.created_at || '', mod.updated_at || '']
+        csv += [...rowBase, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', mod.created_at || '', mod.updated_at || '']
           .map(csvEscape).join(',') + '\n';
         return;
       }
@@ -381,6 +381,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
         csv += [
           ...rowBase,
           g?.id || '', g?.pair_id || '',
+          Array.isArray(g?.domain_leads) ? g.domain_leads.join('; ') : '',
           Array.isArray(g?.roll_numbers) ? g.roll_numbers.join('; ') : '',
           g?.category || '', g?.is_merged ? 'Yes' : 'No', g?.partner_pair_id || '',
           ev?.is_functional ? 'Fully Functional' : 'Issues Detected',

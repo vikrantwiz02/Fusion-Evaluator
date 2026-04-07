@@ -147,11 +147,11 @@ function PairCard({ group, selected, onClick, draggable = false, onDragStart, on
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function LeadDashboard({ moduleId, user, onBack }) {
-    const byNaturalLabel = (a, b) =>
-      String(a || '').localeCompare(String(b || ''), undefined, {
-        numeric: true,
-        sensitivity: 'base',
-      });
+  const byNaturalLabel = (a, b) =>
+    String(a || '').localeCompare(String(b || ''), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
 
   const isAdmin = user?.role === 'admin';
   const canEditSpecifications = isAdmin || user?.role === 'lead';
@@ -495,6 +495,17 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     handleUpdateEval(group.id, newEval);
   };
 
+  const handleUpdateDomainLeads = async (group, items) => {
+    try {
+      await updateGroup(moduleId, group.id, {
+        domain_leads: items,
+      });
+      await loadData({ silent: true });
+    } catch (err) {
+      showToast('error', err.message || 'Failed to update domain leads.');
+    }
+  };
+
   const handleUpdateRollNumbers = async (group, items) => {
     try {
       await updateGroup(moduleId, group.id, {
@@ -521,6 +532,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         pair_id: formData.pairId,
         category: formData.category,
         roll_numbers: parseRollNumbers(formData.rollNumbers),
+        domain_leads: parseRollNumbers(formData.domainLeads),
         division_id: formData.divisionId || addPairDivisionId || null,
       });
       setAddPairModalOpen(false);
@@ -539,6 +551,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         pair_id: formData.pairId,
         category: formData.category,
         roll_numbers: parseRollNumbers(formData.rollNumbers),
+        domain_leads: parseRollNumbers(formData.domainLeads),
         ...(formData.divisionId !== undefined
           ? { division_id: formData.divisionId || null }
           : {}),
@@ -680,13 +693,13 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
   const divisionOptions = useMemo(() =>
     [{ label: 'No Division (ungrouped)', value: '' },
     ...divisions.map(d => ({ label: d.name, value: d.id }))],
-  [divisions]);
+    [divisions]);
 
   const ungroupedPairs = useMemo(() =>
     (moduleData?.groups || [])
       .filter(g => !g.division_id)
       .sort((a, b) => byNaturalLabel(a?.pair_id, b?.pair_id)),
-  [moduleData]);
+    [moduleData]);
 
   const pairsByDivision = useMemo(() => {
     const map = {};
@@ -1115,161 +1128,166 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
           ) : (
             <>
               <div className={`transition-all duration-300 ${sideBySide && !sidebarPeekOpen ? 'h-full overflow-y-auto pr-[35%]' : 'h-full overflow-y-auto'}`}>
-          {selectedGroup ? (
-            <div className="max-w-5xl mx-auto space-y-6">
+                {selectedGroup ? (
+                  <div className="max-w-5xl mx-auto space-y-6">
 
-              {/* Pair Header */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <div className="flex items-center space-x-3 mb-1">
-                    <h2 className="text-2xl font-bold text-gray-900">{selectedGroup.pair_id}</h2>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${selectedGroup.category === 'AI' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-                      {selectedGroup.category}
-                    </span>
-                    {selectedGroup.is_merged && (
-                      <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                        Merged: {selectedGroup.partner_pair_id}
-                      </span>
-                    )}
-                    {selectedGroup.division_id && (
-                      <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full flex items-center">
-                        <FolderOpen className="w-3 h-3 mr-1" />
-                        {divisions.find(d => d.id === selectedGroup.division_id)?.name || '—'}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-500">Evaluate and track progress for this pair.</p>
-                </div>
-
-                <div className="flex items-center space-x-2 bg-gray-50 p-1.5 rounded-lg border border-gray-100">
-                  <button
-                    onClick={() => updateGroupSection(selectedGroup, null, 'is_functional', !selectedGroup.evaluation.is_functional)}
-                    className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.is_functional ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
-                  >
-                    {selectedGroup.evaluation.is_functional
-                      ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Fully Functional</>
-                      : <><XCircle className="w-4 h-4 mr-1.5" /> Issues Detected</>}
-                  </button>
-                  <div className="w-px h-6 bg-gray-300 mx-1" />
-                  <button onClick={() => { setGroupToEdit(selectedGroup); setEditPairModalOpen(true); }} className="text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer p-2 rounded-md transition-colors" title="Edit Pair"><Edit2 className="w-4 h-4" /></button>
-                  <button onClick={() => handleDuplicateGroup(selectedGroup.id)} className="text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer p-2 rounded-md transition-colors" title="Duplicate Pair"><Copy className="w-4 h-4" /></button>
-                  <button onClick={() => confirmDeleteGroup(selectedGroup.id)} className="text-gray-500 hover:text-red-600 hover:bg-red-50 cursor-pointer p-2 rounded-md transition-colors" title="Delete Pair"><Trash2 className="w-4 h-4" /></button>
-                </div>
-              </div>
-
-              {/* Implementation Grid */}
-              <div className={`grid grid-cols-1 ${moduleData.has_backend && moduleData.has_frontend ? 'xl:grid-cols-2' : ''} gap-6`}>
-                <div className="xl:col-span-2">
-                  <EditableList
-                    title="Roll Numbers"
-                    items={selectedGroup.roll_numbers || []}
-                    onUpdate={items => handleUpdateRollNumbers(selectedGroup, items)}
-                  />
-                </div>
-
-                {moduleData.has_backend && (
-                  <div className="space-y-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                    <h3 className="font-bold text-slate-800 flex items-center text-lg border-b border-gray-100 pb-3"><Server className="w-5 h-5 mr-2 text-indigo-600" /> Backend Implementation</h3>
-                    <FileChecklist title="Backend Files" files={selectedGroup.evaluation.backend?.files || {}} onUpdate={files => updateGroupSection(selectedGroup, 'backend', 'files', files)} />
-                    <EditableList title="URL Endpoints" items={selectedGroup.evaluation.backend?.endpoints || []} onUpdate={items => updateGroupSection(selectedGroup, 'backend', 'endpoints', items)} icon={LinkIcon} />
-                    <EditableList title="Functions Detected" items={selectedGroup.evaluation.backend?.functions || []} onUpdate={items => updateGroupSection(selectedGroup, 'backend', 'functions', items)} icon={Code2} />
-                    <div className="border border-gray-200 rounded-xl p-4 bg-slate-50 space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Backend Architecture Match</h4>
-                          <p className="text-xs text-gray-500 mt-1">Is the backend implemented in the given backend architecture?</p>
-                        </div>
-                        <button
-                          onClick={() => updateGroupSection(selectedGroup, 'backend', 'architecture_matches_reference', !selectedGroup.evaluation.backend?.architecture_matches_reference)}
-                          className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.backend?.architecture_matches_reference ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
-                        >
-                          {selectedGroup.evaluation.backend?.architecture_matches_reference
-                            ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Matching</>
-                            : <><XCircle className="w-4 h-4 mr-1.5" /> Not Matching</>}
-                        </button>
-                      </div>
+                    {/* Pair Header */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                       <div>
-                        <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Backend Architecture Note</h5>
-                        <textarea value={selectedGroup.evaluation.backend?.architecture_note || ''} onChange={e => updateGroupSection(selectedGroup, 'backend', 'architecture_note', e.target.value)} placeholder="Add backend architecture notes…" className="w-full border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 min-h-[90px] resize-y bg-white" />
+                        <div className="flex items-center space-x-3 mb-1">
+                          <h2 className="text-2xl font-bold text-gray-900">{selectedGroup.pair_id}</h2>
+                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${selectedGroup.category === 'AI' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {selectedGroup.category}
+                          </span>
+                          {selectedGroup.is_merged && (
+                            <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                              Merged: {selectedGroup.partner_pair_id}
+                            </span>
+                          )}
+                          {selectedGroup.division_id && (
+                            <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full flex items-center">
+                              <FolderOpen className="w-3 h-3 mr-1" />
+                              {divisions.find(d => d.id === selectedGroup.division_id)?.name || '—'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-500">Evaluate and track progress for this pair.</p>
+                      </div>
+
+                      <div className="flex items-center space-x-2 bg-gray-50 p-1.5 rounded-lg border border-gray-100">
+                        <button
+                          onClick={() => updateGroupSection(selectedGroup, null, 'is_functional', !selectedGroup.evaluation.is_functional)}
+                          className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.is_functional ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
+                        >
+                          {selectedGroup.evaluation.is_functional
+                            ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Fully Functional</>
+                            : <><XCircle className="w-4 h-4 mr-1.5" /> Issues Detected</>}
+                        </button>
+                        <div className="w-px h-6 bg-gray-300 mx-1" />
+                        <button onClick={() => { setGroupToEdit(selectedGroup); setEditPairModalOpen(true); }} className="text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer p-2 rounded-md transition-colors" title="Edit Pair"><Edit2 className="w-4 h-4" /></button>
+                        <button onClick={() => handleDuplicateGroup(selectedGroup.id)} className="text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer p-2 rounded-md transition-colors" title="Duplicate Pair"><Copy className="w-4 h-4" /></button>
+                        <button onClick={() => confirmDeleteGroup(selectedGroup.id)} className="text-gray-500 hover:text-red-600 hover:bg-red-50 cursor-pointer p-2 rounded-md transition-colors" title="Delete Pair"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </div>
+
+                    {/* Implementation Grid */}
+                    <div className={`grid grid-cols-1 ${moduleData.has_backend && moduleData.has_frontend ? 'xl:grid-cols-2' : ''} gap-6`}>
+                      <div className="xl:col-span-2 space-y-6">
+                        <EditableList
+                          title="Assigned Domain Lead Roll No."
+                          items={selectedGroup.domain_leads || []}
+                          onUpdate={items => handleUpdateDomainLeads(selectedGroup, items)}
+                        />
+                        <EditableList
+                          title="Roll Numbers"
+                          items={selectedGroup.roll_numbers || []}
+                          onUpdate={items => handleUpdateRollNumbers(selectedGroup, items)}
+                        />
+                      </div>
+
+                      {moduleData.has_backend && (
+                        <div className="space-y-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                          <h3 className="font-bold text-slate-800 flex items-center text-lg border-b border-gray-100 pb-3"><Server className="w-5 h-5 mr-2 text-indigo-600" /> Backend Implementation</h3>
+                          <FileChecklist title="Backend Files" files={selectedGroup.evaluation.backend?.files || {}} onUpdate={files => updateGroupSection(selectedGroup, 'backend', 'files', files)} />
+                          <EditableList title="URL Endpoints" items={selectedGroup.evaluation.backend?.endpoints || []} onUpdate={items => updateGroupSection(selectedGroup, 'backend', 'endpoints', items)} icon={LinkIcon} />
+                          <EditableList title="Functions Detected" items={selectedGroup.evaluation.backend?.functions || []} onUpdate={items => updateGroupSection(selectedGroup, 'backend', 'functions', items)} icon={Code2} />
+                          <div className="border border-gray-200 rounded-xl p-4 bg-slate-50 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Backend Architecture Match</h4>
+                                <p className="text-xs text-gray-500 mt-1">Is the backend implemented in the given backend architecture?</p>
+                              </div>
+                              <button
+                                onClick={() => updateGroupSection(selectedGroup, 'backend', 'architecture_matches_reference', !selectedGroup.evaluation.backend?.architecture_matches_reference)}
+                                className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.backend?.architecture_matches_reference ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
+                              >
+                                {selectedGroup.evaluation.backend?.architecture_matches_reference
+                                  ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Matching</>
+                                  : <><XCircle className="w-4 h-4 mr-1.5" /> Not Matching</>}
+                              </button>
+                            </div>
+                            <div>
+                              <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Backend Architecture Note</h5>
+                              <textarea value={selectedGroup.evaluation.backend?.architecture_note || ''} onChange={e => updateGroupSection(selectedGroup, 'backend', 'architecture_note', e.target.value)} placeholder="Add backend architecture notes…" className="w-full border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 min-h-[90px] resize-y bg-white" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {moduleData.has_frontend && (
+                        <div className="space-y-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                          <h3 className="font-bold text-slate-800 flex items-center text-lg border-b border-gray-100 pb-3"><Layout className="w-5 h-5 mr-2 text-indigo-600" /> Frontend Implementation</h3>
+                          <FileChecklist title="Frontend Files" files={selectedGroup.evaluation.frontend?.files || {}} onUpdate={files => updateGroupSection(selectedGroup, 'frontend', 'files', files)} />
+                          <EditableList title="Endpoints Integrated" items={selectedGroup.evaluation.frontend?.endpoints_used || []} onUpdate={items => updateGroupSection(selectedGroup, 'frontend', 'endpoints_used', items)} icon={LinkIcon} />
+                          <div className="border border-gray-200 rounded-xl p-4 bg-slate-50">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">UI/UX Alignment</h4>
+                                <p className="text-xs text-gray-500 mt-1">Matches the existing Fusion ERP application design and interaction style.</p>
+                              </div>
+                              <button
+                                onClick={() => updateGroupSection(selectedGroup, 'frontend', 'ui_ux_matches_fusion_erp', !selectedGroup.evaluation.frontend?.ui_ux_matches_fusion_erp)}
+                                className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.frontend?.ui_ux_matches_fusion_erp ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
+                              >
+                                {selectedGroup.evaluation.frontend?.ui_ux_matches_fusion_erp
+                                  ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Matching</>
+                                  : <><XCircle className="w-4 h-4 mr-1.5" /> Not Matching</>}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="border border-gray-200 rounded-xl p-4 bg-slate-50 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Frontend Architecture Match</h4>
+                                <p className="text-xs text-gray-500 mt-1">Is the frontend implemented in the given frontend architecture?</p>
+                              </div>
+                              <button
+                                onClick={() => updateGroupSection(selectedGroup, 'frontend', 'architecture_matches_reference', !selectedGroup.evaluation.frontend?.architecture_matches_reference)}
+                                className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.frontend?.architecture_matches_reference ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
+                              >
+                                {selectedGroup.evaluation.frontend?.architecture_matches_reference
+                                  ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Matching</>
+                                  : <><XCircle className="w-4 h-4 mr-1.5" /> Not Matching</>}
+                              </button>
+                            </div>
+                            <div>
+                              <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Frontend Architecture Note</h5>
+                              <textarea value={selectedGroup.evaluation.frontend?.architecture_note || ''} onChange={e => updateGroupSection(selectedGroup, 'frontend', 'architecture_note', e.target.value)} placeholder="Add frontend architecture notes…" className="w-full border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 min-h-[90px] resize-y bg-white" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Features */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                      <FeatureList
+                        features={selectedGroup.evaluation.features || []}
+                        onUpdate={features => updateGroupSection(selectedGroup, null, 'features', features)}
+                        hasBackend={moduleData.has_backend !== false}
+                        hasFrontend={moduleData.has_frontend !== false}
+                      />
+                    </div>
+
+                    {/* Notes */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Notes &amp; Observations</h3>
+                      <textarea
+                        value={selectedGroup.evaluation.notes || ''}
+                        onChange={e => updateGroupSection(selectedGroup, null, 'notes', e.target.value)}
+                        placeholder="Add any notes, issues, or observations here…"
+                        className="w-full border border-gray-200 rounded-xl p-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 min-h-[120px] resize-y bg-gray-50"
+                      />
+                    </div>
+
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                    <Layout className="w-16 h-16 mb-4 text-gray-300" />
+                    <p className="text-lg font-medium text-gray-500">Select a pair to view details</p>
+                    <p className="text-sm mt-2">Or click "Add Pair" to create a new one.</p>
                   </div>
                 )}
-
-                {moduleData.has_frontend && (
-                  <div className="space-y-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                    <h3 className="font-bold text-slate-800 flex items-center text-lg border-b border-gray-100 pb-3"><Layout className="w-5 h-5 mr-2 text-indigo-600" /> Frontend Implementation</h3>
-                    <FileChecklist title="Frontend Files" files={selectedGroup.evaluation.frontend?.files || {}} onUpdate={files => updateGroupSection(selectedGroup, 'frontend', 'files', files)} />
-                    <EditableList title="Endpoints Integrated" items={selectedGroup.evaluation.frontend?.endpoints_used || []} onUpdate={items => updateGroupSection(selectedGroup, 'frontend', 'endpoints_used', items)} icon={LinkIcon} />
-                    <div className="border border-gray-200 rounded-xl p-4 bg-slate-50">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">UI/UX Alignment</h4>
-                          <p className="text-xs text-gray-500 mt-1">Matches the existing Fusion ERP application design and interaction style.</p>
-                        </div>
-                        <button
-                          onClick={() => updateGroupSection(selectedGroup, 'frontend', 'ui_ux_matches_fusion_erp', !selectedGroup.evaluation.frontend?.ui_ux_matches_fusion_erp)}
-                          className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.frontend?.ui_ux_matches_fusion_erp ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
-                        >
-                          {selectedGroup.evaluation.frontend?.ui_ux_matches_fusion_erp
-                            ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Matching</>
-                            : <><XCircle className="w-4 h-4 mr-1.5" /> Not Matching</>}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="border border-gray-200 rounded-xl p-4 bg-slate-50 space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">Frontend Architecture Match</h4>
-                          <p className="text-xs text-gray-500 mt-1">Is the frontend implemented in the given frontend architecture?</p>
-                        </div>
-                        <button
-                          onClick={() => updateGroupSection(selectedGroup, 'frontend', 'architecture_matches_reference', !selectedGroup.evaluation.frontend?.architecture_matches_reference)}
-                          className={`flex items-center text-sm font-medium px-4 py-2 rounded-md transition-colors cursor-pointer ${selectedGroup.evaluation.frontend?.architecture_matches_reference ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200' : 'text-red-700 bg-red-100 hover:bg-red-200'}`}
-                        >
-                          {selectedGroup.evaluation.frontend?.architecture_matches_reference
-                            ? <><CheckCircle2 className="w-4 h-4 mr-1.5" /> Matching</>
-                            : <><XCircle className="w-4 h-4 mr-1.5" /> Not Matching</>}
-                        </button>
-                      </div>
-                      <div>
-                        <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Frontend Architecture Note</h5>
-                        <textarea value={selectedGroup.evaluation.frontend?.architecture_note || ''} onChange={e => updateGroupSection(selectedGroup, 'frontend', 'architecture_note', e.target.value)} placeholder="Add frontend architecture notes…" className="w-full border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 min-h-[90px] resize-y bg-white" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Features */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                <FeatureList
-                  features={selectedGroup.evaluation.features || []}
-                  onUpdate={features => updateGroupSection(selectedGroup, null, 'features', features)}
-                  hasBackend={moduleData.has_backend !== false}
-                  hasFrontend={moduleData.has_frontend !== false}
-                />
-              </div>
-
-              {/* Notes */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Notes &amp; Observations</h3>
-                <textarea
-                  value={selectedGroup.evaluation.notes || ''}
-                  onChange={e => updateGroupSection(selectedGroup, null, 'notes', e.target.value)}
-                  placeholder="Add any notes, issues, or observations here…"
-                  className="w-full border border-gray-200 rounded-xl p-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 min-h-[120px] resize-y bg-gray-50"
-                />
-              </div>
-
-            </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <Layout className="w-16 h-16 mb-4 text-gray-300" />
-              <p className="text-lg font-medium text-gray-500">Select a pair to view details</p>
-              <p className="text-sm mt-2">Or click "Add Pair" to create a new one.</p>
-            </div>
-          )}
               </div>
 
               <aside
@@ -1356,6 +1374,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         title="Add New Pair"
         fields={[
           { name: 'pairId', label: 'Pair ID (e.g., Pair 1)', required: true, placeholder: 'Pair 1' },
+          { name: 'domainLeads', label: 'Assigned Domain Lead Roll No.', type: 'textarea', required: false, placeholder: '23BCS101 - John Doe' },
           { name: 'rollNumbers', label: 'Roll Numbers (comma or newline separated)', type: 'textarea', required: false, placeholder: '23bcs001, 23bcs002' },
           { name: 'category', label: 'Category', type: 'select', required: true, defaultValue: 'CONV', options: [{ label: 'Conventional (CONV)', value: 'CONV' }, { label: 'AI', value: 'AI' }] },
           ...(divisions.length > 0 ? [{
@@ -1374,6 +1393,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
         title="Edit Pair"
         fields={[
           { name: 'pairId', label: 'Pair ID', required: true, defaultValue: groupToEdit?.pair_id },
+          { name: 'domainLeads', label: 'Assigned Domain Lead Roll No.', type: 'textarea', required: false, defaultValue: (groupToEdit?.domain_leads || []).join(', ') },
           { name: 'rollNumbers', label: 'Roll Numbers', type: 'textarea', required: false, defaultValue: (groupToEdit?.roll_numbers || []).join(', ') },
           { name: 'category', label: 'Category', type: 'select', required: true, defaultValue: groupToEdit?.category, options: [{ label: 'Conventional (CONV)', value: 'CONV' }, { label: 'AI', value: 'AI' }] },
           ...(divisions.length > 0 ? [{
