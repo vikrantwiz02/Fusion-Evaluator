@@ -66,7 +66,6 @@ model Group {
   division        GroupDivision? @relation(fields: [division_id], references: [id])
   module          Module         @relation(fields: [module_id], references: [id], onDelete: Cascade)
 
-  @@unique([module_id, pair_id])
   @@index([module_id])
   @@map("groups")
 }
