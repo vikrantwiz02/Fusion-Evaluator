@@ -14,9 +14,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '200mb';
 
-// Security headers (helmet sets X-Content-Type-Options, HSTS, etc.)
-// Preserve COOP header required for Google OAuth popup
-app.use(helmet({ crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' } }));
+// Security headers with CSP tuned for Google Identity Services popup flow.
+app.use(helmet({
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https://accounts.google.com', 'https://apis.google.com'],
+      connectSrc: ["'self'", 'https://accounts.google.com', 'https://oauth2.googleapis.com', 'https://www.googleapis.com'],
+      frameSrc: ["'self'", 'https://accounts.google.com'],
+      imgSrc: ["'self'", 'data:', 'https://*.googleusercontent.com', 'https://*.gstatic.com'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+    },
+  },
+}));
 app.use(corsMiddleware);
 app.use(express.json({ limit: requestBodyLimit }));
 app.use(express.urlencoded({ limit: requestBodyLimit, extended: true }));
