@@ -8,7 +8,6 @@ export default defineConfig(({mode}) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:5001';
   
   return {
-    base: '/evaluator/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

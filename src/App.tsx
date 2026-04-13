@@ -9,7 +9,7 @@ import NotificationCenter from './components/NotificationCenter';
 
 export default function App() {
   return (
-    <BrowserRouter basename="/evaluator">
+    <BrowserRouter>
       <GlobalRoutes />
       <NotificationCenter />
     </BrowserRouter>
