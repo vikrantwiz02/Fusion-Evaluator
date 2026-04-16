@@ -539,16 +539,22 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
     }
   };
 
+  // NOTE: uses moduleData + selectedGroupId (not the derived `selectedGroup` which is
+  // declared later in this function) to avoid a Temporal Dead Zone crash in the
+  // production bundle where the dependency array is evaluated before `selectedGroup`
+  // is initialised.
   const handleManualSave = useCallback(async () => {
-    if (!selectedGroup || pairSaveStatus === 'saving') return;
+    if (pairSaveStatus === 'saving') return;
+    const group = (moduleData?.groups || []).find(g => g.id === selectedGroupId);
+    if (!group) return;
     setPairSaveStatus('saving');
     try {
       await Promise.all([
-        updateGroup(moduleId, selectedGroup.id, {
-          domain_leads: selectedGroup.domain_leads || [],
-          roll_numbers: selectedGroup.roll_numbers || [],
+        updateGroup(moduleId, group.id, {
+          domain_leads: group.domain_leads || [],
+          roll_numbers: group.roll_numbers || [],
         }),
-        updateEvaluation(moduleId, selectedGroup.id, selectedGroup.evaluation || {}),
+        updateEvaluation(moduleId, group.id, group.evaluation || {}),
       ]);
       setPairSaveStatus('saved');
       window.setTimeout(() => setPairSaveStatus('idle'), 2000);
@@ -557,7 +563,7 @@ export default function LeadDashboard({ moduleId, user, onBack }) {
       showToast('error', 'Failed to save: ' + (err.message || 'Unknown error'));
       window.setTimeout(() => setPairSaveStatus('idle'), 3000);
     }
-  }, [moduleId, selectedGroup, pairSaveStatus, showToast]);
+  }, [moduleId, moduleData, selectedGroupId, pairSaveStatus, showToast]);
 
   // ── Pair handlers ────────────────────────────────────────────────────────────
 
