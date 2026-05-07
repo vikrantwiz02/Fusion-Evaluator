@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   fetchAllModules,
+  fetchModuleDetails,
   createModule,
   updateModule,
   deleteModule,
@@ -21,11 +22,13 @@ import {
   Timer,
   CheckSquare,
   Square,
+  FileSpreadsheet,
 } from 'lucide-react';
 import ConfirmModal from './components/ConfirmModal';
 import MasterLeadsData from './MasterLeadsData';
 import { NavLink } from 'react-router-dom';
 import { notifyError, notifyInfo, notifySuccess } from '../../lib/notify';
+import { downloadExcelReport } from './utils/buildExcelReport';
 
 // ── Timer helpers ──────────────────────────────────────────────────────────────
 
@@ -426,6 +429,30 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
     notifySuccess(`Export started for ${mod.name || 'module'}.`);
   };
 
+  const exportAllToExcel = async () => {
+    if (!modules.length) { notifyInfo('No modules to export.'); return; }
+    notifyInfo('Fetching latest data for export…');
+    try {
+      const fresh = await fetchAllModules();
+      downloadExcelReport(fresh, 'all_modules_report.xlsx');
+      notifySuccess('Excel report downloaded.');
+    } catch {
+      notifyError('Failed to generate Excel report.');
+    }
+  };
+
+  const exportToExcel = async (mod) => {
+    notifyInfo(`Fetching latest data for ${mod.name || 'module'}…`);
+    try {
+      const fresh = await fetchModuleDetails(mod.id);
+      const safe = (fresh.name || 'module').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      downloadExcelReport([fresh], `${safe}_report.xlsx`);
+      notifySuccess(`Excel report downloaded for ${fresh.name || 'module'}.`);
+    } catch {
+      notifyError('Failed to generate Excel report.');
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading) return <div className="p-8 flex justify-center text-gray-500">Loading Admin Dashboard...</div>;
@@ -453,6 +480,9 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
           )}
           <button onClick={exportAllToCSV} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm">
             <Download className="w-4 h-4 mr-2" /> Export All
+          </button>
+          <button onClick={exportAllToExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm">
+            <FileSpreadsheet className="w-4 h-4 mr-2" /> Excel Report
           </button>
           {currentView === 'modules' && (
             <button onClick={() => handleOpenModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center text-sm font-medium cursor-pointer transition-colors shadow-sm">
@@ -575,6 +605,7 @@ export default function AdminDashboard({ onSelectModule, currentView = 'modules'
                       <td className="px-6 py-4 pr-10">
                         <div className="flex items-center justify-end gap-3 whitespace-nowrap">
                           <button onClick={() => exportToCSV(mod)} className="text-emerald-600 hover:text-emerald-800 cursor-pointer p-1" title="Export CSV"><Download className="w-4 h-4 inline" /></button>
+                          <button onClick={() => exportToExcel(mod)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer p-1" title="Export Excel"><FileSpreadsheet className="w-4 h-4 inline" /></button>
                           <button onClick={() => onSelectModule(mod.id)} className="text-indigo-600 hover:text-indigo-800 text-sm font-medium cursor-pointer">Manage</button>
                           <button onClick={() => handleDuplicate(mod.id)} className="text-gray-500 hover:text-indigo-600 cursor-pointer" title="Duplicate"><Copy className="w-4 h-4 inline" /></button>
                           <button onClick={() => handleOpenModal(mod)} className="text-gray-500 hover:text-indigo-600 cursor-pointer" title="Edit"><Edit2 className="w-4 h-4 inline" /></button>
